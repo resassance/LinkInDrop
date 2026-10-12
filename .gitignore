@@ -3,12 +3,14 @@
 .flutter-plugins-dependencies
 .packages
 build/
-android/
-linux/
-windows/
+/android/
+/linux/
+/windows/
 .metadata
 .idea/
 *.iml
 *.jks
 *.keystore
 dist/
+__pycache__/
+*.pyc

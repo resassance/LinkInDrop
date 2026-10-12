@@ -41,6 +41,7 @@ class BridgeNode {
   double? transferProgress;
   String? transferName;
   final Set<HttpClient> _clients = {};
+  HttpClient? _outgoingTransfer;
   Future<void> _saveQueue = Future.value();
   int get port => _server?.port ?? preferredPort;
   bool get running => _server != null;
@@ -128,6 +129,7 @@ class BridgeNode {
       return await (() async {
         final request = await client.openUrl(body == null ? 'GET' : 'POST',
           Uri(scheme: 'https', host: host, port: port, path: endpoint));
+        request.followRedirects = false;
         request.headers.set('X-Nearbridge-Id', identity.id);
         if (token != null) request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
         if (body != null) {
@@ -215,12 +217,14 @@ class BridgeNode {
     if (length > maxFileBytes) throw StateError('Лимит файла — 2 ГБ');
     final name = safeFilename(filename ?? p.basename(path));
     final client = _client(peer.fingerprint);
+    _outgoingTransfer = client;
     transferName = name;
     transferProgress = 0;
     onChanged();
     try {
       final request = await client.postUrl(Uri(scheme: 'https', host: peer.host,
         port: peer.port, path: '/file'));
+      request.followRedirects = false;
       request.headers.set('X-Nearbridge-Id', identity.id);
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
       request.headers.set('X-Nearbridge-Filename', base64Url.encode(utf8.encode(name)));
@@ -240,10 +244,15 @@ class BridgeNode {
     } finally {
       client.close(force: true);
       _clients.remove(client);
+      _outgoingTransfer = null;
       transferName = null;
       transferProgress = null;
       onChanged();
     }
+  }
+
+  void cancelTransfer() {
+    _outgoingTransfer?.close(force: true);
   }
 
   static Future<Uint8List> _readBounded(Stream<List<int>> stream, int limit) async {
