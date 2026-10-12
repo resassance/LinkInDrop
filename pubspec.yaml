@@ -1,0 +1,25 @@
+name: nearbridge
+description: Clipboard and file sharing between your devices.
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  basic_utils: 5.8.2
+  pointycastle: ^4.0.0
+  crypto: ^3.0.6
+  path: ^1.9.1
+  path_provider: ^2.1.5
+  file_selector: ^1.0.4
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.0.1
+  super_clipboard: 0.9.1
+  open_filex: ^4.7.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+flutter:
+  uses-material-design: true
