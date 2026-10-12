@@ -289,6 +289,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     if (c.node?.transferName != null) ...[
       const SizedBox(height: 18), Text(c.node!.transferName!), const SizedBox(height: 8),
       LinearProgressIndicator(value: c.node!.transferProgress),
+      TextButton(onPressed: c.node!.cancelTransfer, child: const Text('Отменить передачу')),
     ],
     const SizedBox(height: 14),
     const Text('До 2 ГБ на файл. Полученные файлы доступны в списке ниже.', style: TextStyle(color: subdued, fontSize: 12)),
