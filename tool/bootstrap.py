@@ -23,6 +23,7 @@ gradle = root / "android" / "app" / "build.gradle.kts"
 if gradle.exists():
     value = gradle.read_text(encoding="utf-8")
     value = value.replace("minSdk = flutter.minSdkVersion", "minSdk = 23")
+    value = value.replace("ndkVersion = flutter.ndkVersion", 'ndkVersion = "27.0.12077973"')
     gradle.write_text(value, encoding="utf-8")
 for folder in ["android", "windows", "linux"]:
     for file in (root / folder).rglob("*"):
