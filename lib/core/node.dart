@@ -381,11 +381,11 @@ class BridgeNode {
     final sink = temporary.openWrite();
     var received = 0;
     try {
-      await for (final chunk in request.timeout(const Duration(seconds: 30))) {
+      await sink.addStream(request.timeout(const Duration(seconds: 30)).map((chunk) {
         received += chunk.length;
         if (received > size || received > maxFileBytes) throw const FormatException('File length mismatch');
-        sink.add(chunk);
-      }
+        return chunk;
+      }));
       await sink.flush();
       await sink.close();
       if (received != size) throw const FormatException('Incomplete file');

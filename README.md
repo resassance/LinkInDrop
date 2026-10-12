@@ -67,7 +67,7 @@ The build workflow runs analysis and tests before packaging all three targets. R
 
 - Android automatic clipboard access: investigate an optional advanced setup without replacing the user's keyboard.
 - Tray, autostart and drag-and-drop.
-- Transfer resume and persistent received-file list.
+- Transfer resume and richer file history.
 - Test and document supported Linux desktop sessions.
 - Direct nearby transfer without an existing Wi-Fi router.
 

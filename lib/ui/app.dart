@@ -184,8 +184,9 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         Row(children: [Container(width: 42, height: 42,
           decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(12)),
           child: const Icon(Icons.swap_horiz_rounded, color: background, size: 30)),
-          const SizedBox(width: 12), const Text('nearbridge', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w700)),
-          const Spacer(), _badge('0.1 · alpha', subdued)]),
+          const SizedBox(width: 12), const Expanded(child: Text('nearbridge', maxLines: 1,
+            overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 25, fontWeight: FontWeight.w700))),
+          _badge('0.1 · alpha', subdued)]),
         const SizedBox(height: 32),
         Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Ваши устройства.\nОдин буфер.', style: TextStyle(fontSize: 34, height: 1.15, fontWeight: FontWeight.w700)),
@@ -217,8 +218,8 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     bottomNavigationBar: c.busy ? const LinearProgressIndicator(minHeight: 3) : null));
 
   Widget _devices() => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Row(children: [const Text('Устройства', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-      const Spacer(), _badge('${c.onlineCount} в сети', mint)]),
+    Row(children: [const Expanded(child: Text('Устройства', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
+      _badge('${c.onlineCount} в сети', mint)]),
     const SizedBox(height: 18),
     if (c.peers.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 24),
       child: Text('Свяжите телефон и компьютер один раз.\nДальше они будут узнавать друг друга.', style: TextStyle(color: subdued, height: 1.6))),
@@ -248,7 +249,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
 
   Widget _clipboard() => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [const Icon(Icons.content_paste_rounded, color: mint), const SizedBox(width: 10),
-      const Text('Общий буфер', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))]),
+      const Expanded(child: Text('Общий буфер', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)))]),
     const SizedBox(height: 18),
     const Text('Текст, ссылки и изображения', style: TextStyle(fontSize: 18)),
     const SizedBox(height: 8),
@@ -279,6 +280,12 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     const SizedBox(height: 16),
     FilledButton.icon(onPressed: c.busy || c.selectedPeer == null ? null : _sendFiles,
       icon: const Icon(Icons.attach_file_rounded), label: const Text('Выбрать файлы')),
+    if (c.pendingFiles.isNotEmpty) ...[
+      const SizedBox(height: 14),
+      Text('Ожидают отправки: ${c.pendingFiles.length}', style: const TextStyle(color: subdued)),
+      TextButton(onPressed: c.busy || c.selectedPeer == null ? null : () => c.run(c.sendPendingFiles),
+        child: const Text('Отправить выбранному устройству')),
+    ],
     if (c.node?.transferName != null) ...[
       const SizedBox(height: 18), Text(c.node!.transferName!), const SizedBox(height: 8),
       LinearProgressIndicator(value: c.node!.transferProgress),

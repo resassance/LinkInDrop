@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:basic_utils/basic_utils.dart';
-import 'package:pointycastle/export.dart';
 
 import 'models.dart';
 
