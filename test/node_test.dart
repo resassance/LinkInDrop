@@ -7,7 +7,6 @@ import 'package:nearbridge/core/models.dart';
 import 'package:nearbridge/core/node.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
   test('TLS pairing, clipboard, file transfer, replay protection and revocation', () async {
     final root = await Directory.systemTemp.createTemp('nearbridge-test-');
     final received = <ClipboardPayload>[];

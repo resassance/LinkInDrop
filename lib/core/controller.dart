@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +15,7 @@ class BridgeController extends ChangeNotifier {
   BridgeController({ClipboardAdapter? clipboard}) : clipboard = clipboard ?? ClipboardAdapter();
   final ClipboardAdapter clipboard;
   final List<Activity> activities = [];
+  final List<String> pendingFiles = [];
   final platformChannel = const MethodChannel('nearbridge/system');
   BridgeNode? node;
   Directory? directory;
@@ -64,6 +64,12 @@ class BridgeController extends ChangeNotifier {
         onPairRequest: (name) async => await pairingApproval?.call(name) ?? false,
         onClipboard: _receiveClipboard, onActivity: record, onChanged: notifyListeners);
       await node!.start();
+      final received = await node!.inbox.list().where((item) => item is File &&
+        !p.basename(item.path).startsWith('.')).cast<File>().toList();
+      received.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+      for (final file in received.take(20)) {
+        activities.add(Activity('Файл получен', p.basename(file.path).replaceFirst(RegExp(r'^[A-Za-z0-9_-]{11}_'), ''), path: file.path));
+      }
       node!.clipboardReceivingEnabled = receiveClipboard;
       node!.receivingEnabled = receiveFiles;
       _clipboardTimer = Timer.periodic(const Duration(milliseconds: 1200),
@@ -205,6 +211,18 @@ class BridgeController extends ChangeNotifier {
     await node!.sendFile(peer, path, filename: name);
   }
 
+  Future<void> sendPendingFiles() async {
+    for (final path in pendingFiles.toList()) {
+      await sendFile(path);
+      pendingFiles.remove(path);
+      if (directory != null && p.isWithin(p.join(directory!.path, 'shared'), path)) {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      }
+      notifyListeners();
+    }
+  }
+
   Future<void> handleShared() async {
     if (!isAndroid || node == null) return;
     final shared = await platformChannel.invokeMapMethod<String, dynamic>('takeShared');
@@ -217,12 +235,12 @@ class BridgeController extends ChangeNotifier {
     if (text != null && text.isNotEmpty) await run(() => sendText(text));
     final files = (shared['files'] as List<dynamic>? ?? []).cast<String>();
     if (files.isNotEmpty) {
+      pendingFiles.addAll(files);
       if (selectedPeer == null && peers.where((p) => p.online).length == 1) {
         selectedPeerId = peers.firstWhere((p) => p.online).id;
       }
-      for (final file in files) {
-        await run(() => sendFile(file));
-      }
+      if (selectedPeer != null) await run(sendPendingFiles);
+      notifyListeners();
     }
   }
 
