@@ -8,7 +8,7 @@ on:
       tag:
         description: Existing release tag
         required: true
-        default: v0.1.0-alpha.1
+        default: v0.1.0-alpha.2
 permissions:
   actions: read
   contents: write

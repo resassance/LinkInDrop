@@ -114,7 +114,6 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           ])),
           actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))]);
       }));
-    node.cancelInvite();
   }
 
   Future<void> _enterCode() async {
@@ -167,6 +166,21 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     text.dispose();
     if (value != null) await c.run(() => c.rename(value));
   }
+
+  Future<void> _networkHelp() => showDialog<void>(context: context,
+    builder: (context) => AlertDialog(title: const Text('Подключение по локальной сети'),
+      content: const SingleChildScrollView(child: SelectableText(
+        '1. Подключите оба устройства к одной обычной Wi-Fi сети. Гостевая сеть может запрещать связь между устройствами.\n\n'
+        '2. Проверьте доступ к локальной сети в VPN на телефоне и ПК. Для проверки временно отключите VPN, WARP и сетевые фильтры.\n\n'
+        '3. На Windows нажмите «Разрешить локальные подключения» в Nearbridge. Windows запросит права администратора. Правила разрешают только Nearbridge и только локальную подсеть.\n\n'
+        '4. Создайте новый QR на ПК и отсканируйте его телефоном. На ПК должен появиться запрос подтверждения.')),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))]));
+
+  Future<void> _showActivity(Activity activity) => showDialog<void>(context: context,
+    builder: (context) => AlertDialog(title: Text(activity.title),
+      content: SizedBox(width: 480, child: SingleChildScrollView(child: SelectableText(activity.detail))),
+      actions: [TextButton(onPressed: _networkHelp, child: const Text('Проверить сеть')),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))]));
 
   Future<void> _forget(Peer peer) async {
     final yes = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
@@ -242,9 +256,20 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
       OutlinedButton(onPressed: c.busy ? null : _enterCode, child: const Text('Ввести код')),
       if (c.isAndroid) IconButton(onPressed: c.busy ? null : _scan, tooltip: 'Сканировать QR', icon: const Icon(Icons.qr_code_scanner_rounded)),
     ]),
+    if (c.pairingStage != null) Padding(padding: const EdgeInsets.only(top: 12),
+      child: Text(c.pairingStage!, style: const TextStyle(color: mint))),
     if (c.node?.nearby.isNotEmpty == true) Padding(padding: const EdgeInsets.only(top: 16),
       child: Text('Рядом: ${c.node!.nearby.values.map((d) => d['name']).join(', ')}',
         style: const TextStyle(color: subdued, fontSize: 12))),
+    const SizedBox(height: 12),
+    TextButton.icon(onPressed: _networkHelp, icon: const Icon(Icons.wifi_rounded),
+      label: const Text('Не получается подключиться?')),
+    if (Platform.isWindows) ...[
+      const Text('Windows запросит разрешение администратора. Доступ получит только Nearbridge из локальной подсети.',
+        style: TextStyle(color: subdued, fontSize: 12)),
+      TextButton.icon(onPressed: c.busy ? null : () => c.run(c.configureNetwork),
+        icon: const Icon(Icons.settings_ethernet_rounded), label: const Text('Разрешить локальные подключения')),
+    ],
   ]));
 
   Widget _clipboard() => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -301,10 +326,12 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     if (c.activities.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 16),
       child: Text('Здесь появятся результаты передачи. Содержимое буфера не сохраняется.', style: TextStyle(color: subdued))),
     for (final activity in c.activities.take(12)) ListTile(contentPadding: EdgeInsets.zero,
+      onTap: () => _showActivity(activity),
       leading: Icon(activity.error ? Icons.error_outline_rounded : activity.path != null
         ? Icons.insert_drive_file_outlined : Icons.check_circle_outline_rounded,
         color: activity.error ? Colors.redAccent : mint),
-      title: Text(activity.title), subtitle: Text(activity.detail, maxLines: 2, overflow: TextOverflow.ellipsis,
+      title: Text(activity.title), subtitle: Text(activity.detail.split('\n\nПодробности:').first,
+        maxLines: activity.error ? null : 2, overflow: activity.error ? null : TextOverflow.ellipsis,
         style: const TextStyle(color: subdued)),
       trailing: activity.path == null ? Text('${activity.time.hour.toString().padLeft(2, '0')}:${activity.time.minute.toString().padLeft(2, '0')}',
         style: const TextStyle(color: subdued, fontSize: 12)) : IconButton(icon: const Icon(Icons.open_in_new_rounded),

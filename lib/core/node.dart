@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
 import 'identity.dart';
+import 'connection_error.dart';
 import 'models.dart';
 
 class BridgeNode {
@@ -113,7 +114,8 @@ class BridgeNode {
 
   HttpClient _client(String fingerprint) {
     final client = HttpClient(context: SecurityContext(withTrustedRoots: false));
-    client.connectionTimeout = const Duration(seconds: 5);
+    client.connectionTimeout = const Duration(seconds: 8);
+    client.findProxy = (_) => 'DIRECT';
     client.badCertificateCallback = (certificate, host, port) =>
       secureEquals(certificateFingerprint(certificate.pem), fingerprint);
     _clients.add(client);
@@ -123,6 +125,7 @@ class BridgeNode {
   Future<Map<String, dynamic>> _jsonRequest({required String host,
     required int port, required String fingerprint, required String endpoint,
     String? token, Map<String, dynamic>? body,
+    Set<int> acceptedStatuses = const {200},
     Duration timeout = const Duration(seconds: 15)}) async {
     final client = _client(fingerprint);
     try {
@@ -138,10 +141,11 @@ class BridgeNode {
         }
         final response = await request.close();
         final raw = await _readBounded(response, 65536);
-        if (response.statusCode != 200) {
-          throw HttpException('Запрос отклонён (${response.statusCode})');
+        final decoded = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
+        if (!acceptedStatuses.contains(response.statusCode)) {
+          throw RemoteFailure(response.statusCode, decoded['error'] as String? ?? 'Request rejected');
         }
-        return jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
+        return decoded;
       })().timeout(timeout);
     } finally {
       client.close(force: true);
@@ -149,8 +153,40 @@ class BridgeNode {
     }
   }
 
-  Future<void> pair(PairInvite invite) async {
+  Future<void> probeInvite(PairInvite invite) async {
+    try {
+      await _jsonRequest(host: invite.host, port: invite.port,
+        fingerprint: invite.fingerprint, endpoint: '/ping',
+        acceptedStatuses: const {200, 401});
+    } on SocketException catch (error) {
+      throw describePairingFailure(error, '${invite.host}:${invite.port}', waitingForApproval: false);
+    } on HandshakeException catch (error) {
+      throw describePairingFailure(error, '${invite.host}:${invite.port}', waitingForApproval: false);
+    } on TimeoutException catch (error) {
+      throw describePairingFailure(error, '${invite.host}:${invite.port}', waitingForApproval: false);
+    }
+  }
+
+  Future<void> pair(PairInvite invite, {void Function(String)? onStage}) async {
     if (invite.id == identity.id) throw StateError('Это ваше устройство');
+    final target = '${invite.host}:${invite.port}';
+    onStage?.call('Проверка соединения с $target');
+    await probeInvite(invite);
+    onStage?.call('Подтвердите подключение на ${invite.name}');
+    try {
+      await _completePair(invite);
+    } on SocketException catch (error) {
+      throw describePairingFailure(error, target, waitingForApproval: false);
+    } on HandshakeException catch (error) {
+      throw describePairingFailure(error, target, waitingForApproval: false);
+    } on TimeoutException catch (error) {
+      throw describePairingFailure(error, target, waitingForApproval: true);
+    } on RemoteFailure catch (error) {
+      throw describePairingFailure(error, target, waitingForApproval: true);
+    }
+  }
+
+  Future<void> _completePair(PairInvite invite) async {
     final localToken = randomToken();
     final response = await _jsonRequest(host: invite.host, port: invite.port,
       fingerprint: invite.fingerprint, endpoint: '/pair',

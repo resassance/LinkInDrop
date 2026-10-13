@@ -5,15 +5,17 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nearbridge/core/models.dart';
 import 'package:nearbridge/core/node.dart';
+import 'package:nearbridge/core/connection_error.dart';
 
 void main() {
   test('TLS pairing, clipboard, file transfer, replay protection and revocation', () async {
     final root = await Directory.systemTemp.createTemp('nearbridge-test-');
     final received = <ClipboardPayload>[];
     final activities = <Activity>[];
+    var approvals = 0;
     BridgeNode make(String name) => BridgeNode(
       directory: Directory('${root.path}/$name'), name: name, preferredPort: 0,
-      discoveryEnabled: false, onPairRequest: (_) async => true,
+      discoveryEnabled: false, onPairRequest: (_) async { approvals++; return true; },
       onClipboard: (payload) async => received.add(payload),
       onActivity: activities.add, onChanged: () {});
     final first = make('first');
@@ -22,11 +24,24 @@ void main() {
       await first.start();
       await second.start();
       final invite = first.invite('127.0.0.1');
+      await second.probeInvite(invite);
+      expect(approvals, 0);
+      expect(first.peers, isEmpty);
+      expect(first.invite('127.0.0.1').secret, invite.secret);
+      final unused = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final unusedPort = unused.port;
+      await unused.close();
+      final unreachable = PairInvite(id: invite.id, name: invite.name,
+        host: invite.host, port: unusedPort, fingerprint: invite.fingerprint,
+        secret: invite.secret, expiresAt: invite.expiresAt);
+      await expectLater(second.probeInvite(unreachable), throwsA(isA<ConnectionFailure>()
+        .having((error) => error.kind, 'kind', ConnectionFailureKind.unreachable)));
       final bad = PairInvite(id: invite.id, name: invite.name, host: invite.host,
         port: invite.port, fingerprint: '0' * 64, secret: invite.secret,
         expiresAt: invite.expiresAt);
       await expectLater(second.pair(bad), throwsA(anything));
       await second.pair(invite);
+      expect(approvals, 1);
       expect(first.peers.length, 1);
       expect(second.peers.length, 1);
       final payload = ClipboardPayload(id: 'message', type: 'text',
