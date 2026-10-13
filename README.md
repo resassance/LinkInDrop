@@ -12,7 +12,7 @@ Download a build from [Releases](https://github.com/resassance/nearbridge/releas
 - Linux: extract the archive and run `nearbridge/nearbridge`. Requires GTK 3 and a compatible desktop session.
 - Android: install the APK. Android 6 or newer. Alpha APKs use a development signing key; replacing a build may require uninstalling it and pairing again.
 
-Keep the app running. Use one local network; guest Wi-Fi may prevent devices from connecting. Allow Nearbridge through the Windows firewall on private networks. Default ports: TCP 45831, UDP 45832.
+Keep the app running. Use one local network; guest Wi-Fi may prevent devices from connecting. On Windows, choose **Разрешить локальные подключения** and approve the Windows administrator prompt. This adds app-specific inbound rules limited to the local subnet, without changing the firewall or network profile globally. Default ports: TCP 45831, UDP 45832.
 
 ## Pair
 
@@ -20,7 +20,9 @@ Keep the app running. Use one local network; guest Wi-Fi may prevent devices fro
 2. Scan the QR code on the phone, or copy the connection code to the other device and choose **Ввести код**.
 3. Approve the request on the first device.
 
-Codes expire after five minutes and are single-use. Share them only with your own devices. If there are several network adapters, choose the address belonging to the same network as the other device.
+Codes expire after five minutes and are single-use. Closing the QR window does not revoke the copied code. Share them only with your own devices. If there are several network adapters, choose the address belonging to the same network as the other device.
+
+If pairing times out, test with VPN disabled on both devices, including WARP and network filters on the PC. Alternatively, configure those tools to allow local-network traffic. The app verifies the pinned TLS connection before requesting pairing approval. Connection errors include the destination address and can be tapped to show the full details. A QR timeout means the network connection failed; displaying a QR on both devices does not pair them. Scan the PC's QR with the phone, then approve on the PC.
 
 ## Clipboard
 

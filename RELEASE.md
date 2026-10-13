@@ -1,11 +1,11 @@
-First alpha for Android, Windows and Linux.
+Pairing and local-network fixes for Android, Windows and Linux.
 
-- QR/code pairing with explicit approval.
-- TLS with pinned device certificates.
-- Shared text and PNG clipboard.
-- Local file transfers, up to 2 GiB per file.
-- Android Share menu, notification action and Quick Settings tile.
-- Device access revocation and receive controls.
+- Verify the pinned connection before requesting pairing approval.
+- Show the target address and readable timeout / certificate / approval errors.
+- Tap failed activity to inspect complete details.
+- Windows: add app-specific local-subnet firewall rules through the app, with Windows administrator approval.
+- Keep copied pairing codes valid for five minutes after closing the QR window.
+- Include VPN, WARP, network filtering and guest Wi-Fi troubleshooting.
 
 Keep both apps running on the same local network. Android background clipboard reading is not supported; the send action opens the app. GNOME/Wayland background monitoring is not guaranteed. No transfer resume yet. Desktop builds are unsigned; Android builds use a development signing key.
 

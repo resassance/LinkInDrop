@@ -9,7 +9,7 @@ root = pathlib.Path(__file__).resolve().parent.parent
 output = root / "dist"
 output.mkdir(exist_ok=True)
 platform = sys.argv[1]
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 if platform == "android":
     shutil.copyfile(root / "build/app/outputs/flutter-apk/app-release.apk", output / f"nearbridge-{version}-android.apk")
 elif platform == "linux":

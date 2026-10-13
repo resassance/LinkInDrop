@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'clipboard_adapter.dart';
 import 'models.dart';
 import 'node.dart';
+import 'windows_network.dart';
 
 class BridgeController extends ChangeNotifier {
   BridgeController({ClipboardAdapter? clipboard}) : clipboard = clipboard ?? ClipboardAdapter();
@@ -28,6 +29,7 @@ class BridgeController extends ChangeNotifier {
   String deviceName = Platform.localHostname;
   String? startupError;
   String? selectedPeerId;
+  String? pairingStage;
   String? _lastDigest;
   Timer? _clipboardTimer;
   bool _polling = false;
@@ -132,9 +134,24 @@ class BridgeController extends ChangeNotifier {
   }
 
   Future<void> pair(String code) async {
-    await node!.pair(PairInvite.parse(code));
-    selectedPeerId = peers.last.id;
-    notifyListeners();
+    final invite = PairInvite.parse(code);
+    try {
+      await node!.pair(invite, onStage: (stage) {
+        pairingStage = stage;
+        notifyListeners();
+      });
+      selectedPeerId = invite.id;
+    } finally {
+      pairingStage = null;
+      notifyListeners();
+    }
+  }
+
+  Future<void> configureNetwork() async {
+    final current = node;
+    if (current == null) throw StateError('Соединение ещё не запущено');
+    await configureWindowsNetwork(current.port);
+    record(Activity('Локальные подключения разрешены', 'Windows Firewall · TCP ${current.port} · UDP 45832'));
   }
 
   Future<void> setPeerClipboard(Peer peer, bool enabled) async {
