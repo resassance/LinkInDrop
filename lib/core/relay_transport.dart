@@ -31,15 +31,22 @@ Future<void> bridgeSocket(WebSocket ws, Socket socket) async {
     }
   }
   await Future.wait([
-    () async { try { await ws.addStream(socket); } catch (_) {} finally { await close(); } }(),
+    () async { try { await ws.addStream(() async* {
+      await for (final chunk in socket) {
+        for (var offset = 0; offset < chunk.length; offset += 65536) {
+          yield chunk.sublist(offset, offset + 65536 < chunk.length ? offset + 65536 : chunk.length);
+        }
+      }
+    }()); } catch (_) {} finally { await close(); } }(),
     () async { try { await socket.addStream(frames()); } catch (_) {} finally { await close(); } }(),
   ]);
 }
 
 class RelayDialer {
-  RelayDialer(this.url, this.room);
+  RelayDialer(this.url, this.room, {required this.acceptCertificate});
   final String url;
   final String room;
+  final bool Function(X509Certificate) acceptCertificate;
   ServerSocket? _listener;
   Future<int>? _port;
   final Set<Socket> _sockets = {};
@@ -49,7 +56,8 @@ class RelayDialer {
   Future<ConnectionTask<Socket>> connect(Uri uri, String? proxyHost, int? proxyPort) async {
     final port = await (_port ??= _listen());
     if (_closed) throw const SocketException('Tunnel closed');
-    return Socket.startConnect(InternetAddress.loopbackIPv4, port);
+    return SecureSocket.startConnect(InternetAddress.loopbackIPv4, port,
+      context: SecurityContext(withTrustedRoots: false), onBadCertificate: acceptCertificate);
   }
 
   Future<int> _listen() async {

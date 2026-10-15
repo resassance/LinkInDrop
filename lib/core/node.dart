@@ -181,7 +181,8 @@ class BridgeNode {
       final address = relayAddress ?? peer?.relayUrl;
       final targetRoom = room ?? peer?.relayRoom;
       if (address == null || targetRoom == null) throw const SocketException('No relay route');
-      final dialer = RelayDialer(address, targetRoom);
+      final dialer = RelayDialer(address, targetRoom,
+        acceptCertificate: (certificate) => secureEquals(certificateFingerprint(certificate.pem), fingerprint));
       _dialers[client] = dialer;
       client.connectionFactory = dialer.connect;
     }
@@ -906,6 +907,7 @@ class BridgeNode {
       peers[peer.id] = peer;
       await savePeers();
       cancelInvite();
+      _pairAttempts.remove(remote);
       _respond(request, 200, {'id': identity.id, 'token': token, 'hosts': _localAddresses, 'relayUrl': relayUrl, 'relayRoom': relayRoom});
       onActivity(Activity('Устройство подключено', peer.name));
     } finally {

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nearbridge/core/models.dart';
+import 'package:nearbridge/core/connection_error.dart';
 import 'package:nearbridge/core/node.dart';
 
 import 'support/relay_server.dart';
@@ -14,9 +15,10 @@ void main() {
     RelayServer? fixture;
     Process? process;
     final received = <ClipboardPayload>[];
+    final activities = <Activity>[];
     BridgeNode make(String name) => BridgeNode(directory: Directory('${root.path}/$name'),
       name: name, preferredPort: 0, discoveryEnabled: false, onPairRequest: (_) async => true,
-      onClipboard: (payload) async => received.add(payload), onActivity: (_) {}, onChanged: () {});
+      onClipboard: (payload) async => received.add(payload), onActivity: activities.add, onChanged: () {});
     final source = make('source'); final client = make('client');
     try {
       late int port;
@@ -40,6 +42,18 @@ void main() {
         data: Uint8List.fromList(utf8.encode('relayed')), createdAt: DateTime.now()));
       expect(peer.activeRelay, isTrue);
       expect(received.single.text, 'relayed');
+      final bytes = Uint8List.fromList(List.generate(5 * 1024 * 1024, (i) => i % 251));
+      final file = await File('${root.path}/relayed.bin').writeAsBytes(bytes);
+      await source.sharedFiles.add(file.path);
+      source.fileSharingEnabled = true;
+      final entry = (await client.listFiles(peer)).single;
+      await client.downloadFile(peer, entry);
+      expect(await File(activities.singleWhere((a) => a.path != null).path!).readAsBytes(), bytes);
+      final bad = PairInvite(id: invite.id, name: invite.name, host: invite.host, port: invite.port,
+        fingerprint: '0' * 64, secret: invite.secret, expiresAt: invite.expiresAt,
+        relayUrl: invite.relayUrl, relayRoom: invite.relayRoom);
+      await expectLater(client.probeInvite(bad), throwsA(isA<ConnectionFailure>()
+        .having((e) => e.kind, 'kind', ConnectionFailureKind.certificate)));
     } finally {
       await client.stop(); await source.stop(); await fixture?.close();
       if (process != null) { process.kill(); await process.exitCode; }
