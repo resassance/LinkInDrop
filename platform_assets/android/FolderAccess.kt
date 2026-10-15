@@ -11,12 +11,11 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
-// The system document picker grants read access to one tree. Relative paths are
-// resolved one child at a time under that tree; client input never becomes a URI.
 class FolderAccess(private val activity: Activity) {
     private val resolver = activity.contentResolver
     private val worker = Executors.newFixedThreadPool(3)
-    private val readers = ConcurrentHashMap<String, InputStream>()
+    private val readers = ConcurrentHashMap<String, Reader>()
+    private data class Reader(val input: InputStream, var remaining: Long)
     private var picker: MethodChannel.Result? = null
     private val requestCode = 7314
     private val maxSize = 2147483648L
@@ -26,11 +25,12 @@ class FolderAccess(private val activity: Activity) {
         DocumentsContract.Document.COLUMN_DISPLAY_NAME,
         DocumentsContract.Document.COLUMN_MIME_TYPE,
         DocumentsContract.Document.COLUMN_SIZE,
-        DocumentsContract.Document.COLUMN_FLAGS
+        DocumentsContract.Document.COLUMN_FLAGS,
+        DocumentsContract.Document.COLUMN_LAST_MODIFIED
     )
 
     private data class Document(val id: String, val name: String, val directory: Boolean,
-        val size: Long?, val virtual: Boolean)
+        val size: Long?, val virtual: Boolean, val modified: Long)
 
     fun handle(call: MethodCall, result: MethodChannel.Result): Boolean {
         if (call.method == "pickFolder") {
@@ -62,15 +62,17 @@ class FolderAccess(private val activity: Activity) {
                     }
                     "listFolder" -> list(call.argument<String>("uri")!!,
                         call.argument<String>("path") ?: "", call.argument<Int>("offset") ?: 0)
-                    "openFolderFile" -> open(call.argument<String>("uri")!!, call.argument<String>("path")!!)
+                    "openFolderFile" -> open(call.argument<String>("uri")!!, call.argument<String>("path")!!,
+                        call.argument<Number>("offset")?.toLong() ?: 0L, call.argument<Number>("length")?.toLong())
                     "readFolderFile" -> {
                         val id = call.argument<String>("reader")!!
-                        val input = readers[id] ?: throw IllegalStateException("Чтение файла закрыто")
-                        val bytes = ByteArray(256 * 1024)
-                        val count = input.read(bytes)
-                        if (count < 0) { readers.remove(id)?.close(); null } else bytes.copyOf(count)
+                        val reader = readers[id] ?: throw IllegalStateException("Чтение файла закрыто")
+                        val bytes = ByteArray(minOf(256 * 1024L, reader.remaining).toInt())
+                        val count = if (reader.remaining == 0L) -1 else reader.input.read(bytes)
+                        if (count < 0) { readers.remove(id)?.input?.close(); null }
+                        else { reader.remaining -= count; bytes.copyOf(count) }
                     }
-                    "closeFolderFile" -> { readers.remove(call.argument<String>("reader")!!)?.close(); null }
+                    "closeFolderFile" -> { readers.remove(call.argument<String>("reader")!!)?.input?.close(); null }
                     else -> null
                 }
                 activity.runOnUiThread { result.success(value) }
@@ -118,7 +120,8 @@ class FolderAccess(private val activity: Activity) {
         resolver.query(uri, columns, null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) return Document(cursor.getString(0), cursor.getString(1) ?: "file",
                 cursor.getString(2) == directoryMime, if (cursor.isNull(3)) null else cursor.getLong(3),
-                (cursor.getInt(4) and DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT) != 0)
+                (cursor.getInt(4) and DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT) != 0,
+                if (cursor.isNull(5)) 0L else cursor.getLong(5))
         }
         throw IllegalArgumentException("Папка или файл недоступны")
     }
@@ -161,13 +164,15 @@ class FolderAccess(private val activity: Activity) {
                 if (skipped++ < offset) continue
                 if (items.size == 200) { more = true; break }
                 items.add(mapOf("name" to name.takeLast(120), "relativePath" to relative,
-                    "directory" to directory, "size" to size))
+                    "directory" to directory, "size" to size,
+                    "modified" to (if (cursor.isNull(5)) 0L else cursor.getLong(5)),
+                    "version" to "${if (cursor.isNull(5)) 0L else cursor.getLong(5)}:$size"))
             }
         } ?: throw IllegalArgumentException("Нет доступа к папке")
         return mapOf("files" to items, "nextOffset" to if (more) offset + 200 else null)
     }
 
-    private fun open(location: String, path: String): Map<String, Any> {
+    private fun open(location: String, path: String, offset: Long, length: Long?): Map<String, Any> {
         if (path.isEmpty()) throw IllegalArgumentException("Выберите файл")
         if (readers.size >= 2) throw IllegalStateException("Дождитесь текущих скачиваний")
         val uri = resolve(location, path)
@@ -177,15 +182,24 @@ class FolderAccess(private val activity: Activity) {
             throw IllegalArgumentException("Файл недоступен или больше 2 ГБ")
         }
         val input = resolver.openInputStream(uri) ?: throw IllegalArgumentException("Нет доступа к файлу")
-        val id = UUID.randomUUID().toString()
-        readers[id] = input
-        return mapOf("reader" to id, "size" to size)
+        try {
+            if (offset < 0 || offset > size || (length != null && length < 0)) throw IllegalArgumentException("Invalid range")
+            var skipped = 0L
+            while (skipped < offset) {
+                val count = input.skip(offset - skipped)
+                if (count > 0) skipped += count
+                else { if (input.read() < 0) throw IllegalArgumentException("Source changed"); skipped++ }
+            }
+            val id = UUID.randomUUID().toString()
+            readers[id] = Reader(input, minOf(length ?: (size - offset), size - offset))
+            return mapOf("reader" to id, "size" to size, "version" to "${info.modified}:$size")
+        } catch (error: Exception) { input.close(); throw error }
     }
 
     fun close() {
         picker?.error("folder", "Выбор папки закрыт", null)
         picker = null
-        readers.values.forEach { try { it.close() } catch (_: Exception) {} }
+        readers.values.forEach { try { it.input.close() } catch (_: Exception) {} }
         readers.clear()
         worker.shutdownNow()
     }

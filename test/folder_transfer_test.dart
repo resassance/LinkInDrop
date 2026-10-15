@@ -54,7 +54,6 @@ void main() {
       await second.downloadFile(peer, entry);
       final received = activities.singleWhere((e) => e.path != null);
       expect(await File(received.path!).readAsBytes(), await original.readAsBytes());
-      // Individual-file clients keep their original response shape.
       expect(await second.listFiles(peer), isEmpty);
       first.fileSharingEnabled = false;
       await expectLater(second.downloadFile(peer, entry), throwsA(isA<RemoteFailure>()

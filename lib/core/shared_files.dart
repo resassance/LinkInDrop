@@ -5,7 +5,6 @@ import 'package:path/path.dart' as p;
 
 import 'models.dart';
 
-// Only explicit file grants are exposed. Peer-supplied IDs never become paths.
 class SharedFiles {
   SharedFiles(this.directory);
   final Directory directory;
@@ -37,8 +36,6 @@ class SharedFiles {
   Future<void> add(String path) async {
     if (_paths.length >= 200) throw StateError('Можно открыть доступ к 200 файлам');
     final file = File(path);
-    // Reject symlinks, including symlinked parent directories, and app-private
-    // files (keys, pairing tokens, settings and incoming temporary files).
     final canonical = await file.resolveSymbolicLinks();
     final privateRoot = await directory.resolveSymbolicLinks();
     if (!p.equals(p.normalize(p.absolute(path)), canonical) ||
@@ -80,7 +77,6 @@ class SharedFiles {
         result.add(SharedFile(id: id, name: safeFilename(p.basename(file.path)),
           size: await file.length()));
       } on FileSystemException {
-        // A file may disappear while the list is being built.
       }
     }
     return result;

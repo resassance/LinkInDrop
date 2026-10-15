@@ -8,6 +8,7 @@ import 'shared_folders.dart';
 
 class AndroidFolders implements FolderProvider {
   const AndroidFolders();
+  static final Map<String, int> _references = {};
   static const channel = MethodChannel('nearbridge/system');
 
   Future<T> _translate<T>(Future<T> Function() operation) async {
@@ -22,7 +23,15 @@ class AndroidFolders implements FolderProvider {
   Future<void> validate(String location) => _translate(() => channel.invokeMethod<void>('checkFolder', {'uri': location}));
 
   @override
-  Future<void> revoke(String location) => _translate(() => channel.invokeMethod<void>('revokeFolder', {'uri': location}));
+  Future<void> retain(String location) async { _references[location] = (_references[location] ?? 0) + 1; }
+
+  @override
+  Future<void> revoke(String location) async {
+    final remaining = (_references[location] ?? 1) - 1;
+    if (remaining > 0) { _references[location] = remaining; return; }
+    _references.remove(location);
+    await _translate(() => channel.invokeMethod<void>('revokeFolder', {'uri': location}));
+  }
 
   @override
   Future<SharedPage> list(String location, String id, String path, int offset) async {
@@ -37,9 +46,9 @@ class AndroidFolders implements FolderProvider {
   }
 
   @override
-  Future<SharedRead> open(String location, String path) async {
+  Future<SharedRead> open(String location, String path, {int offset = 0, int? length}) async {
     final value = await _translate(() => channel.invokeMapMethod<String, dynamic>('openFolderFile',
-      {'uri': location, 'path': path}));
+      {'uri': location, 'path': path, 'offset': offset, 'length': length}));
     if (value == null) throw StateError('Файл недоступен');
     final reader = value['reader'] as String;
     var closed = false;
@@ -59,6 +68,6 @@ class AndroidFolders implements FolderProvider {
         await close();
       }
     }
-    return SharedRead(value['size'] as int, stream(), close);
+    return SharedRead(value['size'] as int, stream(), close, version: value['version'] as String?);
   }
 }
