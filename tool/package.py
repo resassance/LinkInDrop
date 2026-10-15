@@ -1,5 +1,6 @@
 import hashlib
 import pathlib
+import re
 import shutil
 import sys
 import tarfile
@@ -9,7 +10,10 @@ root = pathlib.Path(__file__).resolve().parent.parent
 output = root / "dist"
 output.mkdir(exist_ok=True)
 platform = sys.argv[1]
-version = "0.1.0-alpha.2"
+version_match = re.search(r"^version:\s*([^\s+]+)", (root / "pubspec.yaml").read_text(), re.MULTILINE)
+if version_match is None:
+    raise RuntimeError("pubspec.yaml has no version")
+version = version_match.group(1)
 if platform == "android":
     shutil.copyfile(root / "build/app/outputs/flutter-apk/app-release.apk", output / f"nearbridge-{version}-android.apk")
 elif platform == "linux":
@@ -27,3 +31,4 @@ for file in output.iterdir():
         continue
     checksum = hashlib.sha256(file.read_bytes()).hexdigest()
     file.with_name(file.name + ".sha256").write_text(f"{checksum}  {file.name}\n")
+
