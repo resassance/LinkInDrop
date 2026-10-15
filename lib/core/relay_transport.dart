@@ -40,6 +40,7 @@ Future<void> bridgeSocket(WebSocket ws, Socket socket) async {
     }()); } catch (_) {} finally { await close(); } }(),
     () async { try { await socket.addStream(frames()); } catch (_) {} finally { await close(); } }(),
   ]);
+  try { await ws.close(); } catch (_) {}
 }
 
 class RelayDialer {
@@ -84,7 +85,9 @@ class RelayDialer {
     _closed = true;
     unawaited(_listener?.close());
     for (final socket in _sockets.toList()) { socket.destroy(); }
-    for (final ws in _websockets.toList()) { unawaited(ws.close()); }
+    for (final ws in _websockets.toList()) {
+      unawaited(() async { try { await ws.close(); } catch (_) {} }());
+    }
     _sockets.clear(); _websockets.clear();
   }
 }
@@ -152,7 +155,7 @@ class RelayHost {
     online = false;
     await _control?.close();
     for (final socket in _local.toList()) { socket.destroy(); }
-    await Future.wait(_tunnels.toList().map((ws) => ws.close()));
+    await Future.wait(_tunnels.toList().map((ws) async { try { await ws.close(); } catch (_) {} }));
     _tunnels.clear(); _local.clear();
   }
 }
