@@ -105,6 +105,10 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
             if (addresses.length > 1) DropdownButton<String>(value: host, isExpanded: true,
               items: addresses.map((ip) => DropdownMenuItem(value: ip, child: Text(ip))).toList(),
               onChanged: (value) => setDialogState(() => host = value!)),
+            const SizedBox(height: 8),
+            SelectableText('$host:${node.port}', style: const TextStyle(color: subdued)),
+            const Text('Выберите адрес сети, доступной второму устройству. Для подключения на расстоянии используйте адрес общей VPN-сети.',
+              style: TextStyle(color: subdued, fontSize: 12)),
             const SizedBox(height: 12),
             TextButton.icon(onPressed: () async {
               await Clipboard.setData(ClipboardData(text: code));
@@ -145,6 +149,102 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _remoteAddress(Peer peer) async {
+    final host = TextEditingController(text: peer.remoteHost ?? '');
+    final port = TextEditingController(text: '${peer.remotePort ?? peer.port}');
+    final value = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      title: Text('Адрес: ${peer.name}'),
+      content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(
+        mainAxisSize: MainAxisSize.min, children: [
+          const Text('Для доступа через интернет подключите оба устройства к одной VPN-сети, например Tailscale. Укажите IPv4 или DNS-имя другого устройства. Nearbridge должен быть запущен.'),
+          const SizedBox(height: 16),
+          TextField(controller: host, decoration: const InputDecoration(
+            labelText: 'IPv4 / DNS', hintText: '100.64.0.12')),
+          const SizedBox(height: 10),
+          TextField(controller: port, keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Порт Nearbridge')),
+          const SizedBox(height: 10),
+          const Text('Пустой адрес возвращает локальное подключение. На Windows разрешите входящий TCP из адреса VPN в брандмауэре.',
+            style: TextStyle(color: subdued)),
+        ]))),
+      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Отмена')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Проверить и сохранить'))]));
+    final address = host.text.trim();
+    final number = int.tryParse(port.text);
+    host.dispose();
+    port.dispose();
+    if (value == true) await c.run(() => c.node!.setRemoteAddress(peer,
+      address.isEmpty ? null : address, number));
+  }
+
+  Future<void> _manageSharedFiles() async {
+    final node = c.node;
+    if (node == null) return;
+    var entries = await node.sharedFiles.list();
+    if (!mounted) return;
+    await showDialog<void>(context: context, builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: const Text('Мои общие файлы'),
+        content: SizedBox(width: 460, height: 320, child: Column(children: [
+          const Text('Привязанные устройства смогут видеть и скачивать только выбранные здесь файлы, пока включён доступ.'),
+          const SizedBox(height: 12),
+          Expanded(child: ListView(children: [
+            if (entries.isEmpty) const Text('Файлы пока не выбраны'),
+            for (final entry in entries) ListTile(title: Text(entry.name),
+              subtitle: Text(_fileSize(entry.size)),
+              trailing: IconButton(tooltip: 'Закрыть доступ', icon: const Icon(Icons.remove_circle_outline),
+                onPressed: () async {
+                  await c.run(() => node.sharedFiles.remove(entry.id));
+                  final updated = await node.sharedFiles.list();
+                  if (context.mounted) setDialogState(() => entries = updated);
+                })),
+          ])),
+        ])),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть')),
+          FilledButton.icon(icon: const Icon(Icons.add), label: const Text('Добавить файлы'),
+            onPressed: () async {
+              final files = await openFiles();
+              await c.run(() async {
+                for (final file in files) { await node.sharedFiles.add(file.path); }
+              });
+              final updated = await node.sharedFiles.list();
+              if (context.mounted) setDialogState(() => entries = updated);
+            })])));
+  }
+
+  Future<void> _browseFiles() async {
+    final peer = c.selectedPeer;
+    final node = c.node;
+    if (peer == null || node == null) return;
+    var pending = node.listFiles(peer);
+    final chosen = await showDialog<SharedFile>(context: context, builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: Text('Файлы: ${peer.name}'),
+        content: SizedBox(width: 460, height: 320, child: FutureBuilder<List<SharedFile>>(
+          future: pending, builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) return SingleChildScrollView(child: SelectableText(
+              '${snapshot.error}\n\nВключите доступ к общим файлам на другом устройстве. Обновите Nearbridge на обоих устройствах.'));
+            final entries = snapshot.data!;
+            if (entries.isEmpty) return const Text('На устройстве пока нет общих файлов. Добавьте их в «Мои общие файлы» на том устройстве.');
+            return ListView(children: [for (final entry in entries) ListTile(
+              leading: const Icon(Icons.insert_drive_file_outlined),
+              title: Text(entry.name), subtitle: Text(_fileSize(entry.size)),
+              trailing: IconButton(tooltip: 'Скачать', icon: const Icon(Icons.download_rounded),
+                onPressed: !c.receiveFiles ? null : () => Navigator.pop(context, entry)))]);
+          })),
+        actions: [TextButton(onPressed: () => setDialogState(() => pending = node.listFiles(peer)),
+          child: const Text('Обновить')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))])));
+    if (chosen != null) await c.run(() => node.downloadFile(peer, chosen));
+  }
+
+  String _fileSize(int bytes) => bytes < 1024 ? '$bytes Б'
+    : bytes < 1024 * 1024 ? '${(bytes / 1024).toStringAsFixed(1)} КБ'
+    : '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ';
+
   Future<void> _sendText() async {
     final text = TextEditingController();
     final value = await showDialog<String>(context: context, builder: (context) => AlertDialog(
@@ -173,7 +273,8 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         '1. Подключите оба устройства к одной обычной Wi-Fi сети. Гостевая сеть может запрещать связь между устройствами.\n\n'
         '2. Проверьте доступ к локальной сети в VPN на телефоне и ПК. Для проверки временно отключите VPN, WARP и сетевые фильтры.\n\n'
         '3. На Windows нажмите «Разрешить локальные подключения» в Nearbridge. Windows запросит права администратора. Правила разрешают только Nearbridge и только локальную подсеть.\n\n'
-        '4. Создайте новый QR на ПК и отсканируйте его телефоном. На ПК должен появиться запрос подтверждения.')),
+        '4. Если адаптеров несколько, выберите в QR адрес сети второго устройства. Проверьте порт под QR: после смены порта обновите правило Windows Firewall.\n\n'
+        '5. Для доступа на расстоянии подключите оба устройства к общей VPN-сети. В меню устройства укажите его удалённый адрес. Разрешите входящий TCP из адреса VPN в брандмауэре и оставьте Nearbridge запущенным.')),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))]));
 
   Future<void> _showActivity(Activity activity) => showDialog<void>(context: context,
@@ -225,7 +326,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           const SizedBox(height: 20),
           _history(),
           const SizedBox(height: 20),
-          const Text('Локальная сеть · без аккаунта · соединение с проверкой сертификата',
+          const Text('Локальная сеть или VPN · без аккаунта · проверка сертификата',
             style: TextStyle(color: subdued, fontSize: 12)),
         ],
       ])))),
@@ -243,12 +344,14 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         child: ListTile(onTap: () => c.selectPeer(peer.id),
           leading: Icon(Icons.devices_rounded, color: peer.online ? mint : subdued),
           title: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(peer.online ? 'Подключено' : 'Не в сети', style: const TextStyle(color: subdued)),
+          subtitle: Text('${peer.online ? 'Подключено' : 'Не в сети'}${peer.remoteHost == null ? '' : ' · удалённый адрес'}', style: const TextStyle(color: subdued)),
           trailing: PopupMenuButton<String>(onSelected: (value) {
             if (value == 'forget') unawaited(_forget(peer));
             if (value == 'clipboard') unawaited(c.setPeerClipboard(peer, !peer.clipboardEnabled));
+            if (value == 'address') unawaited(_remoteAddress(peer));
           }, itemBuilder: (_) => [PopupMenuItem(value: 'clipboard',
             child: Text(peer.clipboardEnabled ? 'Отключить общий буфер' : 'Включить общий буфер')),
+            const PopupMenuItem(value: 'address', child: Text('Локальный / удалённый адрес')),
             const PopupMenuItem(value: 'forget', child: Text('Забыть устройство'))])))),
     const SizedBox(height: 12),
     Wrap(spacing: 8, runSpacing: 8, children: [
@@ -303,8 +406,16 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     Text(c.selectedPeer == null ? 'Выберите устройство выше, затем отправьте файлы.' : 'Получатель: ${c.selectedPeer!.name}',
       style: const TextStyle(color: subdued)),
     const SizedBox(height: 16),
-    FilledButton.icon(onPressed: c.busy || c.selectedPeer == null ? null : _sendFiles,
-      icon: const Icon(Icons.attach_file_rounded), label: const Text('Выбрать файлы')),
+    Wrap(spacing: 8, runSpacing: 8, children: [
+      FilledButton.icon(onPressed: c.busy || c.selectedPeer == null ? null : _sendFiles,
+        icon: const Icon(Icons.attach_file_rounded), label: const Text('Выбрать файлы')),
+      OutlinedButton.icon(onPressed: c.busy || c.selectedPeer == null ? null : _browseFiles,
+        icon: const Icon(Icons.folder_open_rounded), label: const Text('Файлы устройства')),
+      TextButton(onPressed: c.busy ? null : _manageSharedFiles, child: const Text('Мои общие файлы')),
+    ]),
+    SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Разрешить скачивание моих общих файлов'),
+      subtitle: const Text('Доступ только для привязанных устройств', style: TextStyle(color: subdued)),
+      value: c.shareFiles, onChanged: (value) => unawaited(c.setSettings(fileSharing: value))),
     if (c.pendingFiles.isNotEmpty) ...[
       const SizedBox(height: 14),
       Text('Ожидают отправки: ${c.pendingFiles.length}', style: const TextStyle(color: subdued)),
@@ -375,3 +486,4 @@ class _ScanScreenState extends State<ScanScreen> {
       }
     }));
 }
+
