@@ -7,11 +7,14 @@ import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 
 import '../core/controller.dart';
 import '../core/models.dart';
 import '../core/android_folders.dart';
 import 'remote_files_dialog.dart';
+import '../core/transfer_queue.dart';
+import '../core/access_rules.dart';
 
 const mint = Color(0xffb7f779);
 const background = Color(0xff111411);
@@ -50,6 +53,7 @@ class BridgeHome extends StatefulWidget {
 
 class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   BridgeController get c => widget.controller;
+  String? _draggingPeer;
 
   @override
   void initState() {
@@ -65,6 +69,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed && c.isAndroid && !c.loading) {
       unawaited(c.handleShared());
       unawaited(c.node?.checkPeers());
+      unawaited(c.backup?.scan());
     }
   }
 
@@ -89,6 +94,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     if (node == null) return;
     final addresses = await node.addresses();
     if (!mounted) return;
+    if (addresses.isEmpty && node.relayUrl != null) addresses.add('127.0.0.1');
     if (addresses.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Подключитесь к Wi-Fi или локальной сети')));
       return;
@@ -102,7 +108,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
             Container(padding: const EdgeInsets.all(12), color: Colors.white,
               child: QrImageView(data: code, size: 250, backgroundColor: Colors.white)),
             const SizedBox(height: 18),
-            const Text('Откройте Nearbridge на другом устройстве и отсканируйте код. Оба устройства должны быть в одной сети.',
+            const Text('Откройте Nearbridge на другом устройстве и отсканируйте код. Используйте общую сеть или настроенный ретранслятор.',
               style: TextStyle(color: subdued)),
             if (addresses.length > 1) DropdownButton<String>(value: host, isExpanded: true,
               items: addresses.map((ip) => DropdownMenuItem(value: ip, child: Text(ip))).toList(),
@@ -198,13 +204,16 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
               leading: Icon(entry.isDirectory ? Icons.folder_outlined : Icons.insert_drive_file_outlined),
               title: Text(entry.name),
               subtitle: Text(entry.isDirectory ? 'Папка со всем содержимым' : _fileSize(entry.size)),
-              trailing: IconButton(tooltip: 'Закрыть доступ', icon: const Icon(Icons.remove_circle_outline),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(tooltip: 'Кому доступно и срок', icon: const Icon(Icons.manage_accounts_outlined),
+                  onPressed: () => _shareAccess(entry)),
+                IconButton(tooltip: 'Закрыть доступ', icon: const Icon(Icons.remove_circle_outline),
                 onPressed: () async {
                   await c.run(() => entry.isDirectory
                     ? node.sharedFolders.remove(entry.id) : node.sharedFiles.remove(entry.id));
                   final updated = await ownEntries();
                   if (context.mounted) setDialogState(() => entries = updated);
-                })),
+                })])),
           ])),
         ])),
         actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть')),
@@ -240,13 +249,150 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     if (peer == null || node == null) return;
     final chosen = await showDialog<SharedFile>(context: context, builder: (context) => RemoteFilesDialog(
       deviceName: peer.name, canDownload: c.receiveFiles,
-      load: (folder, offset) => node.browseFiles(peer, folder: folder, offset: offset)));
-    if (chosen != null) await c.run(() => node.downloadFile(peer, chosen));
+      load: (folder, offset) => node.browseFiles(peer, folder: folder, offset: offset),
+      search: (folder, query, cursor) => node.searchFiles(peer, query, folder: folder, cursor: cursor),
+      preview: (entry) => node.previewFile(peer, entry)));
+    if (chosen != null) await c.run(() => c.enqueueDownload(peer, chosen));
   }
 
   String _fileSize(int bytes) => bytes < 1024 ? '$bytes Б'
     : bytes < 1024 * 1024 ? '${(bytes / 1024).toStringAsFixed(1)} КБ'
     : '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ';
+
+  Future<void> _shareAccess(SharedFile entry) async {
+    final old = c.node!.access.rules[entry.id] ?? ShareAccess();
+    var all = old.peerIds == null;
+    final selected = Set<String>.from(old.peerIds ?? c.peers.map((p) => p.id));
+    var duration = old.expiresAt == null ? 'never' : 'keep';
+    final saved = await showDialog<bool>(context: context, builder: (context) => StatefulBuilder(
+      builder: (context, update) => AlertDialog(title: Text('Доступ: ${entry.name}'),
+        content: SizedBox(width: 430, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          SwitchListTile(title: const Text('Все привязанные устройства'), value: all,
+            onChanged: (value) => update(() => all = value)),
+          if (!all) for (final peer in c.peers) CheckboxListTile(title: Text(peer.name),
+            value: selected.contains(peer.id), onChanged: (value) => update(() {
+              if (value == true) selected.add(peer.id); else selected.remove(peer.id);
+            })),
+          DropdownButton<String>(value: duration, isExpanded: true, items: [
+            if (old.expiresAt != null) const DropdownMenuItem(value: 'keep', child: Text('Не менять срок')),
+            const DropdownMenuItem(value: 'never', child: Text('Бессрочно')),
+            const DropdownMenuItem(value: '15', child: Text('На 15 минут')),
+            const DropdownMenuItem(value: '60', child: Text('На час')),
+            const DropdownMenuItem(value: '1440', child: Text('На сутки')),
+          ], onChanged: (value) => update(() => duration = value!)),
+        ]))), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Сохранить'))])));
+    if (saved == true) await c.run(() => c.setShareAccess(entry.id, all ? null : selected,
+      duration == 'keep' ? old.expiresAt : duration == 'never' ? null : DateTime.now().add(Duration(minutes: int.parse(duration)))));
+  }
+
+  Future<void> _relaySettings() async {
+    final text = TextEditingController(text: c.relayAddress ?? '');
+    final saved = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      title: const Text('Подключение через интернет'),
+      content: SizedBox(width: 430, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('Укажите адрес сервера Nearbridge. Код подключения передаст его второму устройству. VPN не нужен; содержимое защищено соединением с проверкой сертификата устройства.'),
+        const SizedBox(height: 14), TextField(controller: text,
+          decoration: const InputDecoration(labelText: 'Адрес сервера', hintText: 'wss://relay.example.com')),
+        const SizedBox(height: 10), const Text('Пустой адрес выключает ретранслятор.'),
+      ])), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Отмена')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Подключить'))]));
+    final value = text.text;
+    text.dispose();
+    if (saved == true) await c.run(() => c.setRelay(value));
+  }
+
+  Future<void> _backupFolder() async {
+    await c.run(() async {
+      if (c.isAndroid) {
+        final selected = await const AndroidFolders().pick();
+        if (selected != null) await c.backup!.sources.add(selected['uri'] as String, name: selected['name'] as String?);
+      } else {
+        final selected = await getDirectoryPath(confirmButtonText: 'Выбрать папку с фото');
+        if (selected != null) await c.backup!.sources.add(selected);
+      }
+      c.changed();
+    });
+  }
+
+  Widget _queue() {
+    final queue = c.queue;
+    final jobs = queue?.jobs ?? <TransferJob>[];
+    final visible = [...jobs.where((j) => j.state != 'completed' && j.state != 'cancelled'),
+      ...jobs.reversed.where((j) => j.state == 'completed' || j.state == 'cancelled')].take(30);
+    const labels = {'waiting': 'Ожидает', 'running': 'Передаётся', 'paused': 'Приостановлено',
+      'failed': 'Не получилось', 'completed': 'Готово', 'cancelled': 'Отменено'};
+    return _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [const Expanded(child: Text('Очередь передач', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
+        if (jobs.isNotEmpty) TextButton(onPressed: () => queue!.clearFinished(), child: const Text('Убрать готовые'))]),
+      if (jobs.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12),
+        child: Text('Здесь появятся файлы и папки. Передачи можно приостановить и продолжить.', style: TextStyle(color: subdued))),
+      for (final job in visible) ListTile(contentPadding: EdgeInsets.zero,
+        leading: Icon(job.kind == 'download' ? Icons.download_rounded : job.kind == 'backup' ? Icons.photo_library_outlined : Icons.upload_rounded),
+        title: Text(job.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${labels[job.state] ?? job.state}${job.state == 'running' ? ' · ${(job.progress * 100).round()}%' : ''}', style: const TextStyle(color: subdued)),
+          if (job.error != null) Text(job.error!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.redAccent)),
+          if (job.state == 'running') LinearProgressIndicator(value: job.progress),
+        ]),
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (job.state == 'running' || job.state == 'waiting') IconButton(tooltip: 'Пауза', icon: const Icon(Icons.pause_rounded),
+            onPressed: () => queue!.pause(job)),
+          if (job.state == 'paused' || job.state == 'failed') IconButton(tooltip: 'Продолжить', icon: const Icon(Icons.play_arrow_rounded),
+            onPressed: () => queue!.resume(job)),
+          if (job.state != 'completed' && job.state != 'cancelled') IconButton(tooltip: 'Отменить', icon: const Icon(Icons.close_rounded),
+            onPressed: () => queue!.cancel(job)),
+        ])),
+    ]));
+  }
+
+  Widget _settings() {
+    final backup = c.backup;
+    return _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('Фоновая работа и подключение', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+      if (Platform.isWindows || Platform.isLinux) ...[
+        SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Сворачивать в трей при закрытии'),
+          value: c.closeToTray, onChanged: (value) => c.run(() => c.setDesktop(hide: value))),
+        SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Запускать вместе с системой'),
+          value: c.desktop?.startupEnabled ?? false,
+          onChanged: c.desktop == null ? null : (value) => c.run(() => c.setDesktop(startup: value))),
+        const Text('Перетащите файлы или папку на карточку устройства, чтобы добавить их в очередь.', style: TextStyle(color: subdued)),
+      ],
+      const SizedBox(height: 12),
+      Text(c.node?.relayHost?.online == true ? 'Интернет: ретранслятор подключён'
+        : c.relayAddress == null ? 'Интернет: ретранслятор не настроен' : 'Интернет: ожидается сервер', style: const TextStyle(color: subdued)),
+      TextButton.icon(onPressed: c.busy ? null : _relaySettings, icon: const Icon(Icons.public_rounded),
+        label: const Text('Настроить доступ без VPN')),
+      const Divider(height: 32),
+      const Text('Резервное копирование фото', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 8),
+      const Text('Новые фото из выбранных папок отправляются на устройство ниже. Оригиналы сохраняются; одинаковые снимки повторно не передаются.', style: TextStyle(color: subdued)),
+      if (backup != null) ...[
+        DropdownButton<String>(isExpanded: true,
+          value: c.peers.any((p) => p.id == backup.peerId) ? backup.peerId : null,
+          hint: const Text('Куда копировать фото'),
+          items: c.peers.map((peer) => DropdownMenuItem(value: peer.id, child: Text(peer.name))).toList(),
+          onChanged: (value) async { backup.peerId = value; await backup.save(); c.changed(); }),
+        for (final root in backup.sources.roots()) ListTile(contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.folder_outlined), title: Text(root.name),
+          trailing: IconButton(tooltip: 'Убрать из резервного копирования', icon: const Icon(Icons.close_rounded),
+            onPressed: () => c.run(() async {
+              for (final job in c.queue!.jobs.where((j) => j.sourceFolder == root.id).toList()) { await c.queue!.cancel(job); }
+              await backup.sources.remove(root.id); c.changed();
+            }))),
+        SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Автоматически копировать новые фото'), value: backup.enabled,
+          onChanged: backup.peerId == null || backup.sources.roots().isEmpty ? null : (value) async {
+            backup.enabled = value; await backup.save(); c.changed(); if (value) unawaited(backup.scan());
+          }),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          OutlinedButton.icon(onPressed: c.busy ? null : _backupFolder, icon: const Icon(Icons.add_photo_alternate_outlined), label: const Text('Выбрать папку с фото')),
+          TextButton(onPressed: backup.scanning || !backup.enabled ? null : () => backup.scan(), child: const Text('Проверить сейчас')),
+        ]),
+        Text(backup.scanning ? 'Проверяем новые снимки…' : 'Скопировано: ${backup.copied}', style: const TextStyle(color: subdued)),
+        if (backup.lastError != null) SelectableText(backup.lastError!, style: const TextStyle(color: Colors.redAccent)),
+      ],
+    ]));
+  }
 
   Future<void> _sendText() async {
     final text = TextEditingController();
@@ -327,6 +473,10 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           const SizedBox(height: 20),
           _transfers(),
           const SizedBox(height: 20),
+          _queue(),
+          const SizedBox(height: 20),
+          _settings(),
+          const SizedBox(height: 20),
           _history(),
           const SizedBox(height: 20),
           const Text('Локальная сеть или VPN · без аккаунта · проверка сертификата',
@@ -341,21 +491,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     const SizedBox(height: 18),
     if (c.peers.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 24),
       child: Text('Свяжите телефон и компьютер один раз.\nДальше они будут узнавать друг друга.', style: TextStyle(color: subdued, height: 1.6))),
-    for (final peer in c.peers) Padding(padding: const EdgeInsets.only(bottom: 8),
-      child: Container(decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: c.selectedPeerId == peer.id ? mint : Colors.transparent)),
-        child: ListTile(onTap: () => c.selectPeer(peer.id),
-          leading: Icon(Icons.devices_rounded, color: peer.online ? mint : subdued),
-          title: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text('${peer.online ? 'Подключено' : 'Не в сети'}${peer.remoteHost == null ? '' : ' · удалённый адрес'}', style: const TextStyle(color: subdued)),
-          trailing: PopupMenuButton<String>(onSelected: (value) {
-            if (value == 'forget') unawaited(_forget(peer));
-            if (value == 'clipboard') unawaited(c.setPeerClipboard(peer, !peer.clipboardEnabled));
-            if (value == 'address') unawaited(_remoteAddress(peer));
-          }, itemBuilder: (_) => [PopupMenuItem(value: 'clipboard',
-            child: Text(peer.clipboardEnabled ? 'Отключить общий буфер' : 'Включить общий буфер')),
-            const PopupMenuItem(value: 'address', child: Text('Локальный / удалённый адрес')),
-            const PopupMenuItem(value: 'forget', child: Text('Забыть устройство'))])))),
+    for (final peer in c.peers) Padding(padding: const EdgeInsets.only(bottom: 8), child: _device(peer)),
     const SizedBox(height: 12),
     Wrap(spacing: 8, runSpacing: 8, children: [
       FilledButton.icon(onPressed: c.busy ? null : _showInvite, icon: const Icon(Icons.add_rounded), label: const Text('Добавить')),
@@ -377,6 +513,32 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         icon: const Icon(Icons.settings_ethernet_rounded), label: const Text('Разрешить локальные подключения')),
     ],
   ]));
+
+  Widget _device(Peer peer) {
+    final tile = Container(decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _draggingPeer == peer.id || c.selectedPeerId == peer.id ? mint : Colors.transparent)),
+      child: ListTile(onTap: () => c.selectPeer(peer.id),
+        leading: Icon(Icons.devices_rounded, color: peer.online ? mint : subdued),
+        title: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text('${peer.online ? 'Подключено' : 'Не в сети'}${peer.activeRelay ? ' · интернет' : ''}', style: const TextStyle(color: subdued)),
+        trailing: PopupMenuButton<String>(onSelected: (value) {
+          if (value == 'forget') unawaited(_forget(peer));
+          if (value == 'clipboard') unawaited(c.setPeerClipboard(peer, !peer.clipboardEnabled));
+          if (value == 'address') unawaited(_remoteAddress(peer));
+          if (value == 'incoming') unawaited(c.setIncomingFiles(peer, !peer.incomingFilesEnabled));
+        }, itemBuilder: (_) => [
+          PopupMenuItem(value: 'clipboard', child: Text(peer.clipboardEnabled ? 'Отключить общий буфер' : 'Включить общий буфер')),
+          PopupMenuItem(value: 'incoming', child: Text(peer.incomingFilesEnabled ? 'Запретить приём файлов' : 'Разрешить приём файлов')),
+          const PopupMenuItem(value: 'address', child: Text('Локальный / удалённый адрес')),
+          const PopupMenuItem(value: 'forget', child: Text('Забыть устройство'))])));
+    if (!Platform.isWindows && !Platform.isLinux) return tile;
+    return DropTarget(onDragEntered: (_) => setState(() => _draggingPeer = peer.id),
+      onDragExited: (_) => setState(() => _draggingPeer = null),
+      onDragDone: (detail) {
+        setState(() => _draggingPeer = null);
+        unawaited(c.run(() => c.enqueuePaths(peer, detail.files.map((f) => f.path).toList())));
+      }, child: tile);
+  }
 
   Widget _clipboard() => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [const Icon(Icons.content_paste_rounded, color: mint), const SizedBox(width: 10),
