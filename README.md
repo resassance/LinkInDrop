@@ -12,7 +12,7 @@ Download a build from [Releases](https://github.com/resassance/nearbridge/releas
 - Linux: extract the archive and run `nearbridge/nearbridge`. Requires GTK 3 and a compatible desktop session.
 - Android: install the APK. Android 6 or newer. Alpha APKs use a development signing key; replacing a build may require uninstalling it and pairing again.
 
-Keep the app running. Use one local network; guest Wi-Fi may prevent devices from connecting. On Windows, choose **Разрешить локальные подключения** and approve the Windows administrator prompt. This adds app-specific inbound rules limited to the local subnet, without changing the firewall or network profile globally. Default ports: TCP 45831, UDP 45832.
+Keep the app running. Use one local network or a private VPN connecting both devices; guest Wi-Fi may prevent devices from connecting. On Windows, choose **Разрешить локальные подключения** and approve the Windows administrator prompt. This adds app-specific inbound rules limited to the local subnet, without changing the firewall or network profile globally. Default ports: TCP 45831, UDP 45832. The actual listening port is shown below the QR and saved across restarts; if it changes because it is occupied, update the firewall rule.
 
 ## Pair
 
@@ -22,7 +22,9 @@ Keep the app running. Use one local network; guest Wi-Fi may prevent devices fro
 
 Codes expire after five minutes and are single-use. Closing the QR window does not revoke the copied code. Share them only with your own devices. If there are several network adapters, choose the address belonging to the same network as the other device.
 
-If pairing times out, test with VPN disabled on both devices, including WARP and network filters on the PC. Alternatively, configure those tools to allow local-network traffic. The app verifies the pinned TLS connection before requesting pairing approval. Connection errors include the destination address and can be tapped to show the full details. A QR timeout means the network connection failed; displaying a QR on both devices does not pair them. Scan the PC's QR with the phone, then approve on the PC.
+New QR codes include alternative adapter addresses. Nearbridge probes them concurrently with certificate pinning, so an unreachable VPN adapter does not delay a reachable LAN adapter. Paired devices exchange updated addresses over authenticated connections and automatically reconnect through a working endpoint. Network probes have bounded timeouts and a short retry. Clipboard sends retry transient network failures with the same deduplicated message ID. A failed automatic clipboard send remains eligible for the next poll.
+
+If pairing still times out, allow local-network traffic in VPN/WARP on both devices. WARP's local-network exclusion and a zapret filter that excludes private/VPN subnets are configuration requirements when those tools intercept the connection. Nearbridge uses direct sockets and never disables certificate checks. It cannot override a VPN kill switch, OS firewall, or packet filter that blocks every route. Connection errors include the destination address and can be tapped to show full details. Scan the PC's QR with the phone, then approve on the PC.
 
 ## Clipboard
 
@@ -37,6 +39,21 @@ Clipboard images are limited to 8 MiB and text to 256 KiB. Some applications exp
 ## Files
 
 Choose a recipient and **Выбрать файлы**, or share files to Nearbridge on Android. Files stream over the local connection, with a 2 GiB limit per file. Received files appear in **Последние передачи**. File receipt does not open or execute them automatically. Transfers interrupted by a disconnect must be sent again.
+
+### Browse and receive from another device
+
+On the device holding the files, open **Мои общие файлы**, add files, and enable **Разрешить скачивание моих общих файлов**. On the other device, select that peer, open **Файлы устройства**, and download a file. Both devices need this version. Only the explicitly selected files are listed; this is not unrestricted access to the remote filesystem. Up to 200 files can be published. Sharing is off by default, persists across restarts when enabled, and applies to all locally paired devices. Remove a file to revoke new downloads, disable sharing globally, or forget a device to revoke its credentials.
+
+Downloads stream into a temporary file and move to the inbox only after their declared length is verified. Progress and cancellation are available. An interrupted download is retried once from the beginning using a verified available route; cancellation does not retry. Uploads are not automatically repeated after sending bytes, because a lost acknowledgement could otherwise create duplicate files. Resume from an offset is not supported yet.
+
+### Remote access over the internet
+
+1. Pair the devices once and connect them to the same private VPN, for example Tailscale. Alternatively, pair using a QR that includes the VPN adapter address.
+2. In the peer menu choose **Локальный / удалённый адрес**. Enter the other device's VPN IPv4 or DNS name and its Nearbridge port. The app verifies its pinned certificate, authentication token, and device ID before saving. Configure both sides if both need to initiate connections. Clear the remote address to return to discovered addresses.
+3. On Windows, allow Nearbridge's inbound TCP port from the other device's VPN IP. The built-in LAN firewall rule uses `LocalSubnet` and does not automatically include VPN ranges. Restrict any extra rule to the application, actual port and intended VPN peer.
+4. Keep Nearbridge and the VPN running on the source device, enable file sharing there, then browse/download from the receiving device. Android background availability still depends on battery restrictions.
+
+WARP alone does not create a peer-to-peer private network. No automatic NAT traversal or Nearbridge relay is included. Internet access therefore requires a working private VPN route or a separately configured reachable endpoint. VPN routes are tried alongside LAN routes without weakening TLS verification.
 
 ## Data and connection
 
@@ -74,3 +91,4 @@ The build workflow runs analysis and tests before packaging all three targets. R
 - Direct nearby transfer without an existing Wi-Fi router.
 
 MIT License. Copyright 2026 Александр Орлов.
+

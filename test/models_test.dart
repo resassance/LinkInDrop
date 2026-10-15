@@ -34,6 +34,30 @@ void main() {
     expect(safeFilename('photo?.png'), 'photo_.png');
   });
 
+  test('VPN endpoints, adapter candidates and remote settings round trip', () {
+    for (final host in ['100.64.0.12', 'pc.example.ts.net', '192.168.1.3']) {
+      expect(isConnectionHost(host), isTrue);
+    }
+    for (final host in ['https://host', 'host/path', 'a:45831', '0.0.0.0',
+      '224.0.0.1', '999.2.3.4', '-host', ' host', 'host..name']) {
+      expect(isConnectionHost(host), isFalse);
+    }
+    final invite = PairInvite(id: 'pc', name: 'PC', host: '100.64.0.12',
+      port: 45831, fingerprint: 'a' * 64, secret: randomToken(),
+      expiresAt: DateTime.now().add(const Duration(minutes: 5)), hosts: ['192.168.1.3']);
+    expect(PairInvite.parse(invite.encode()).hosts, ['192.168.1.3']);
+    final peer = Peer(id: 'pc', name: 'PC', host: '192.168.1.3', port: 45831,
+      fingerprint: 'a' * 64, incomingToken: randomToken(), outgoingToken: randomToken(),
+      remoteHost: '100.64.0.12', remotePort: 45832, additionalHosts: ['10.0.0.2']);
+    final restored = Peer.fromJson(peer.toJson());
+    expect(restored.connectionHost, '100.64.0.12');
+    expect(restored.connectionPort, 45832);
+    expect(restored.additionalHosts, ['10.0.0.2']);
+    final legacy = Map<String, dynamic>.from(peer.toJson())
+      ..remove('remoteHost')..remove('remotePort')..remove('additionalHosts');
+    expect(Peer.fromJson(legacy).connectionHost, '192.168.1.3');
+  });
+
   test('clipboard validates type, size, UTF-8, PNG and freshness', () {
     final value = ClipboardPayload(id: 'one', type: 'text',
       data: Uint8List.fromList(utf8.encode('Привет')), createdAt: DateTime.now());
@@ -54,3 +78,4 @@ void main() {
     expect(secureEquals('', 'x'), isFalse);
   });
 }
+

@@ -25,6 +25,7 @@ class BridgeController extends ChangeNotifier {
   bool autoClipboard = true;
   bool receiveClipboard = true;
   bool receiveFiles = true;
+  bool shareFiles = false;
   bool mobileActive = true;
   String deviceName = Platform.localHostname;
   String? startupError;
@@ -61,6 +62,7 @@ class BridgeController extends ChangeNotifier {
         autoClipboard = data['autoClipboard'] as bool? ?? true;
         receiveClipboard = data['receiveClipboard'] as bool? ?? true;
         receiveFiles = data['receiveFiles'] as bool? ?? true;
+        shareFiles = data['shareFiles'] as bool? ?? false;
       }
       node = BridgeNode(directory: directory!, name: deviceName,
         onPairRequest: (name) async => await pairingApproval?.call(name) ?? false,
@@ -74,6 +76,7 @@ class BridgeController extends ChangeNotifier {
       }
       node!.clipboardReceivingEnabled = receiveClipboard;
       node!.receivingEnabled = receiveFiles;
+      node!.fileSharingEnabled = shareFiles;
       _clipboardTimer = Timer.periodic(const Duration(milliseconds: 1200),
         (_) => unawaited(_pollClipboard()));
       await node!.checkPeers();
@@ -97,15 +100,19 @@ class BridgeController extends ChangeNotifier {
     await File(p.join(directory!.path, 'settings.json')).writeAsString(jsonEncode({
       'name': deviceName, 'autoClipboard': autoClipboard,
       'receiveClipboard': receiveClipboard, 'receiveFiles': receiveFiles,
+      'shareFiles': shareFiles,
     }), flush: true);
   }
 
-  Future<void> setSettings({bool? automatic, bool? clipboardReceiving, bool? filesReceiving}) async {
+  Future<void> setSettings({bool? automatic, bool? clipboardReceiving, bool? filesReceiving,
+    bool? fileSharing}) async {
     if (automatic != null) autoClipboard = automatic;
     if (clipboardReceiving != null) receiveClipboard = clipboardReceiving;
     if (filesReceiving != null) receiveFiles = filesReceiving;
+    if (fileSharing != null) shareFiles = fileSharing;
     node?.clipboardReceivingEnabled = receiveClipboard;
     node?.receivingEnabled = receiveFiles;
+    node?.fileSharingEnabled = shareFiles;
     await _saveSettings();
     notifyListeners();
   }
@@ -189,8 +196,8 @@ class BridgeController extends ChangeNotifier {
         final digest = payload.digest;
         if (_lastDigest == null) { _lastDigest = digest; return; }
         if (digest == _lastDigest) return;
-        _lastDigest = digest;
         await node!.sendClipboard(payload);
+        _lastDigest = digest;
       });
     } catch (_) {
     } finally {
@@ -204,8 +211,8 @@ class BridgeController extends ChangeNotifier {
     }
     final payload = await clipboard.read();
     if (payload == null) throw StateError('В буфере нет текста или изображения');
-    _lastDigest = payload.digest;
     await node!.sendClipboard(payload);
+    _lastDigest = payload.digest;
   });
 
   Future<void> _receiveClipboard(ClipboardPayload payload) => _serializeClipboard(() async {
@@ -273,3 +280,4 @@ class BridgeController extends ChangeNotifier {
     super.dispose();
   }
 }
+

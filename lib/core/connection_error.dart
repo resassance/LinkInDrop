@@ -12,7 +12,7 @@ class ConnectionFailure implements Exception {
 
   String get message => switch (kind) {
     ConnectionFailureKind.unreachable =>
-      'Нет соединения с $target. Проверьте VPN на обоих устройствах, Windows Firewall и доступ к локальной сети.',
+      'Нет соединения с $target. Проверьте адрес и порт в QR, VPN на обоих устройствах, Windows Firewall и доступ к сети.',
     ConnectionFailureKind.certificate =>
       'Не удалось проверить устройство $target. Создайте новый QR на нужном устройстве.',
     ConnectionFailureKind.approvalTimeout =>
@@ -46,3 +46,4 @@ ConnectionFailure describePairingFailure(Object error, String target,
   };
   return ConnectionFailure(kind, target, '$error');
 }
+
