@@ -450,7 +450,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           child: const Icon(Icons.swap_horiz_rounded, color: background, size: 30)),
           const SizedBox(width: 12), const Expanded(child: Text('nearbridge', maxLines: 1,
             overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 25, fontWeight: FontWeight.w700))),
-          _badge('0.1 · alpha', subdued)]),
+          _badge('0.2 · alpha', subdued)]),
         const SizedBox(height: 32),
         Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Ваши устройства.\nОдин буфер.', style: TextStyle(fontSize: 34, height: 1.15, fontWeight: FontWeight.w700)),

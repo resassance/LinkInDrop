@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.2.0-alpha.1
+
+- Resume checked file blocks and persist transfer queues with pause, retry and cancellation.
+- Upload/download entire folder trees, including empty directories.
+- Add desktop tray operation, opt-in autostart and dropping files onto device cards.
+- Add per-device sharing rules, expiring file/folder grants and per-device upload receipt controls.
+- Search shared folder names recursively and preview image thumbnails or bounded text.
+- Back up selected photo folders automatically, deduplicating acknowledged content while preserving originals.
+- Pair and connect without VPN through an optional self-hosted WebSocket relay that forwards pinned TLS bytes.
+- Include the Node relay, tests and HTTPS deployment configuration.
+- Remove existing source comments and record the rule in AGENTS.md.
 
 - Select shared folders on Windows/Linux or Android's system document picker; keep grants after a restart.
 - Browse nested folders, return to parents, refresh and load additional directory pages.
