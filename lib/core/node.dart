@@ -275,7 +275,7 @@ class BridgeNode {
 
   Future<void> _connectPeer(Peer peer) {
     return _routeChecks.putIfAbsent(peer.id, () => _findRoute(peer).whenComplete(
-      () => _routeChecks.remove(peer.id)));
+      () { _routeChecks.remove(peer.id); }));
   }
 
   Future<void> _findRoute(Peer peer) async {
