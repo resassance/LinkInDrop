@@ -72,6 +72,7 @@ class PhotoBackup {
     changed();
     try {
       final batch = <TransferJob>[];
+      final planned = <String>{};
       for (final root in sources.roots()) {
         final pending = <(String, int)>[('', 0)];
         var visited = 0;
@@ -92,16 +93,16 @@ class PhotoBackup {
               _versions[fingerprint] = digest;
             }
             final receipt = '$peer:$digest';
-            if (_receipts.contains(receipt) || _queued.contains(receipt)) continue;
+            if (_receipts.contains(receipt) || _queued.contains(receipt) || !planned.add(receipt)) continue;
             final date = entry.modifiedAt != null && entry.modifiedAt!.millisecondsSinceEpoch > 0 ? entry.modifiedAt! : DateTime.now();
             final relative = 'Photos/${date.year}/${date.month.toString().padLeft(2, '0')}/${digest.substring(0, 12)}_${entry.name}';
             batch.add(TransferJob(id: randomToken(16), peerId: peer, kind: 'backup',
               name: entry.name, source: entry.relativePath, sourceFolder: root.id, relative: relative, digest: digest));
-            _queued.add(receipt);
           }
         }
       }
       if (batch.isNotEmpty) {
+        _queued.addAll(planned);
         try { await enqueue(batch); } catch (_) { for (final job in batch) { _queued.remove('${job.peerId}:${job.digest}'); } rethrow; }
       }
       lastScan = DateTime.now();

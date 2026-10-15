@@ -63,6 +63,17 @@ void main() {
       expect(queued.length, 2);
       expect(await File('${photos.path}/one.jpg').exists(), isTrue);
       expect(await File('${photos.path}/copy.jpg').exists(), isTrue);
+      final unavailable = await Directory('${root.path}/Unavailable').create();
+      await sources.add(unavailable.path);
+      await unavailable.delete();
+      await File('${photos.path}/late.jpg').writeAsString('new-photo');
+      await backup.scan();
+      expect(backup.lastError, isNotNull);
+      expect(queued.length, 2);
+      await unavailable.create();
+      await backup.scan();
+      expect(backup.lastError, isNull);
+      expect(queued.length, 3);
     } finally { await backup.close(); await root.delete(recursive: true); }
   });
 }
