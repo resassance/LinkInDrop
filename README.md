@@ -40,9 +40,15 @@ Clipboard images are limited to 8 MiB and text to 256 KiB. Some applications exp
 
 Choose a recipient and **Выбрать файлы**, or share files to Nearbridge on Android. Files stream over the local connection, with a 2 GiB limit per file. Received files appear in **Последние передачи**. File receipt does not open or execute them automatically. Transfers interrupted by a disconnect must be sent again.
 
-### Browse and receive from another device
+### Browse files and folders from another device
 
-On the device holding the files, open **Мои общие файлы**, add files, and enable **Разрешить скачивание моих общих файлов**. On the other device, select that peer, open **Файлы устройства**, and download a file. Both devices need this version. Only the explicitly selected files are listed; this is not unrestricted access to the remote filesystem. Up to 200 files can be published. Sharing is off by default, persists across restarts when enabled, and applies to all locally paired devices. Remove a file to revoke new downloads, disable sharing globally, or forget a device to revoke its credentials.
+On the device holding the files, open **Мои файлы и папки**, choose **Добавить файлы** or **Добавить папку**, and enable **Разрешить доступ к моим файлам и папкам**. On the other device, select that peer, open **Файлы устройства**, then open a shared folder and navigate through its subfolders. Tap a file or its download button to receive it. Use **Назад**, **К общему списку**, **Обновить** and **Показать ещё** to navigate and load large directories.
+
+Sharing a folder grants read access to its entire subtree, including files added later. Up to 50 folders and 200 individual files can be published. Only the selected roots are available; shared-folder paths cannot escape those roots, follow symbolic links or expose Nearbridge's private keys and settings. Folder contents are read when requested rather than copied into the app. Files larger than 2 GiB and inaccessible entries are omitted. Each directory page contains at most 200 entries. Directory listings can change while files are being added or removed; refresh to obtain the current contents.
+
+On Android, **Добавить папку** opens the system document-tree picker and retains read permission across app restarts. Android may restrict selection of storage roots and protected system directories. Providers must report file sizes and support ordinary readable documents; virtual documents and files with unknown size are not exposed. If permission is revoked in Android or the provider disappears, remove the unavailable shared folder and choose it again. Remote readers only receive names and relative paths, never Android document URIs or absolute local paths.
+
+Sharing is off by default, persists across restarts when enabled, and applies to all locally paired devices. Remove a folder to revoke new browsing and downloads for its entire subtree, disable sharing globally, or forget a device to revoke its credentials. Both devices need the folder-browsing update; older devices can continue exchanging individual files.
 
 Downloads stream into a temporary file and move to the inbox only after their declared length is verified. Progress and cancellation are available. An interrupted download is retried once from the beginning using a verified available route; cancellation does not retry. Uploads are not automatically repeated after sending bytes, because a lost acknowledgement could otherwise create duplicate files. Resume from an offset is not supported yet.
 

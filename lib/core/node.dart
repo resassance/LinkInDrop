@@ -9,17 +9,19 @@ import 'identity.dart';
 import 'connection_error.dart';
 import 'models.dart';
 import 'shared_files.dart';
+import 'shared_folders.dart';
 
 class BridgeNode {
   BridgeNode({required this.directory, required this.name,
     required this.onPairRequest, required this.onClipboard, required this.onActivity,
     required this.onChanged, this.preferredPort = 45831,
-    this.discoveryEnabled = true});
+    this.discoveryEnabled = true, this.folderProvider});
 
   final Directory directory;
   String name;
   final int preferredPort;
   final bool discoveryEnabled;
+  final FolderProvider? folderProvider;
   final Future<bool> Function(String name) onPairRequest;
   final Future<void> Function(ClipboardPayload payload) onClipboard;
   final void Function(Activity activity) onActivity;
@@ -33,6 +35,7 @@ class BridgeNode {
   final Map<String, Future<void>> _routeChecks = {};
   late Identity identity;
   late SharedFiles sharedFiles;
+  late SharedFolders sharedFolders;
   bool fileSharingEnabled = false;
   int _downloads = 0;
   HttpServer? _server;
@@ -60,6 +63,8 @@ class BridgeNode {
     await inbox.create(recursive: true);
     sharedFiles = SharedFiles(directory);
     await sharedFiles.load();
+    sharedFolders = SharedFolders(directory, documents: folderProvider);
+    await sharedFolders.load();
     _localAddresses = await addresses();
     final state = File(p.join(directory.path, 'peers.json'));
     if (await state.exists()) {
@@ -143,14 +148,14 @@ class BridgeNode {
 
   Future<Map<String, dynamic>> _jsonRequest({required String host,
     required int port, required String fingerprint, required String endpoint,
-    String? token, Map<String, dynamic>? body,
+    String? token, Map<String, dynamic>? body, Map<String, String>? query,
     Set<int> acceptedStatuses = const {200},
     Duration timeout = const Duration(seconds: 15)}) async {
     final client = _client(fingerprint);
     try {
       return await (() async {
         final request = await client.openUrl(body == null ? 'GET' : 'POST',
-          Uri(scheme: 'https', host: host, port: port, path: endpoint));
+          Uri(scheme: 'https', host: host, port: port, path: endpoint, queryParameters: query));
         request.followRedirects = false;
         request.headers.set('X-Nearbridge-Id', identity.id);
         if (token != null) request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
@@ -159,7 +164,7 @@ class BridgeNode {
           request.add(utf8.encode(jsonEncode(body)));
         }
         final response = await request.close();
-        final raw = await _readBounded(response, 256 * 1024);
+        final raw = await _readBounded(response, endpoint == '/browse' ? 2 * 1024 * 1024 : 256 * 1024);
         final decoded = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
         if (!acceptedStatuses.contains(response.statusCode)) {
           throw RemoteFailure(response.statusCode, decoded['error'] as String? ?? 'Request rejected');
@@ -315,13 +320,13 @@ class BridgeNode {
   }
 
   Future<Map<String, dynamic>> _pairedRequest(Peer peer, String endpoint,
-      {Map<String, dynamic>? body}) async {
+      {Map<String, dynamic>? body, Map<String, String>? query}) async {
     for (var attempt = 0; ; attempt++) {
       await _connectPeer(peer);
       try {
         return await _jsonRequest(host: peer.connectionHost, port: peer.connectionPort,
           fingerprint: peer.fingerprint, endpoint: endpoint,
-          token: peer.outgoingToken, body: body);
+          token: peer.outgoingToken, body: body, query: query);
       } on SocketException {
         if (attempt != 0) rethrow;
       } on TimeoutException {
@@ -427,6 +432,25 @@ class BridgeNode {
     return entries.map((entry) => SharedFile.fromJson(entry as Map<String, dynamic>)).toList();
   }
 
+  Future<SharedPage> browseFiles(Peer peer, {SharedFile? folder, int offset = 0}) async {
+    if (offset < 0 || offset > 100000 ||
+        (folder != null && (!folder.isDirectory || folder.folderId == null))) {
+      throw const FormatException('Invalid directory request');
+    }
+    if (folder != null) SharedFile.fromJson(folder.toJson());
+    try {
+      return SharedPage.fromJson(await _pairedRequest(peer, '/browse', query: {
+        if (folder != null) 'folder': folder.folderId!,
+        if (folder != null) 'path': folder.relativePath!,
+        'offset': '$offset',
+      }));
+    } on RemoteFailure catch (error) {
+      // Alpha.3 devices can still expose their individual shared files.
+      if (error.status != 404 || folder != null || offset != 0) rethrow;
+      return SharedPage(await listFiles(peer));
+    }
+  }
+
   Future<void> downloadFile(Peer peer, SharedFile entry) async {
     _transferCancelled = false;
     for (var attempt = 0; ; attempt++) {
@@ -452,6 +476,7 @@ class BridgeNode {
     if (transferName != null) throw StateError('Дождитесь текущей передачи');
     // Validate even entries constructed by callers; the ID is a single segment.
     SharedFile.fromJson(entry.toJson());
+    if (entry.isDirectory) throw StateError('Выберите файл внутри папки');
     final client = _client(peer.fingerprint);
     _outgoingTransfer = client;
     transferName = entry.name;
@@ -464,7 +489,11 @@ class BridgeNode {
     try {
       await _connectPeer(peer);
       final request = await client.getUrl(Uri(scheme: 'https', host: peer.connectionHost,
-        port: peer.connectionPort, path: '/files/${entry.id}'))
+        port: peer.connectionPort,
+        path: entry.folderId == null ? '/files/${entry.id}' : '/browse/file',
+        queryParameters: entry.folderId == null ? null : {
+          'folder': entry.folderId!, 'path': entry.relativePath!,
+        }))
         .timeout(const Duration(seconds: 15));
       request.followRedirects = false;
       request.headers.set('X-Nearbridge-Id', identity.id);
@@ -537,6 +566,11 @@ class BridgeNode {
         await _serveSharedFiles(request, peer);
         return;
       }
+      if (request.method == 'GET' &&
+          (request.uri.path == '/browse' || request.uri.path == '/browse/file')) {
+        await _serveFolders(request, peer);
+        return;
+      }
       switch ((request.method, request.uri.path)) {
         case ('GET', '/ping'):
           _respond(request, 200, {'v': protocolVersion, 'id': identity.id, 'hosts': _localAddresses});
@@ -566,6 +600,8 @@ class BridgeNode {
         default:
           _respond(request, 404, {'error': 'Not found'});
       }
+    } on FileSystemException {
+      _respond(request, 404, {'error': 'Папка или файл недоступны. Обновите список.'});
     } on FormatException {
       _respond(request, 400, {'error': 'Invalid payload'});
     } on TimeoutException {
@@ -672,6 +708,63 @@ class BridgeNode {
       }
     } finally {
       _downloads--;
+    }
+  }
+
+  Future<void> _serveFolders(HttpRequest request, Peer peer) async {
+    request.response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
+    if (!fileSharingEnabled) {
+      _respond(request, 403, {'error': 'Владелец не включил доступ к файлам и папкам'});
+      return;
+    }
+    final query = request.uri.queryParameters;
+    final id = query['folder'];
+    final path = query['path'] ?? '';
+    final offset = int.tryParse(query['offset'] ?? '0');
+    if (offset == null || offset < 0 || offset > 100000 || !isSharedPath(path) ||
+        (id != null && !RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(id))) {
+      throw const FormatException('Invalid directory request');
+    }
+    if (request.uri.path == '/browse') {
+      if (id == null) {
+        if (path.isNotEmpty) throw const FormatException('Missing folder');
+        final entries = [...sharedFolders.roots(), ...await sharedFiles.list()];
+        final page = entries.skip(offset).take(200).toList();
+        _respond(request, 200, SharedPage(page,
+          nextOffset: entries.length > offset + 200 ? offset + 200 : null).toJson());
+      } else {
+        _respond(request, 200, (await sharedFolders.list(id, path, offset: offset)).toJson());
+      }
+      return;
+    }
+    if (id == null || path.isEmpty) throw const FormatException('Missing file path');
+    if (_downloads >= 2) {
+      _respond(request, 429, {'error': 'Receiver busy'});
+      return;
+    }
+    _downloads++;
+    SharedRead? source;
+    try {
+      source = await sharedFolders.open(id, path);
+      if (source.size < 0 || source.size > maxFileBytes) {
+        throw const FormatException('Invalid file size');
+      }
+      request.response.headers.contentType = ContentType.binary;
+      request.response.contentLength = source.size;
+      try {
+        var sent = 0;
+        await request.response.addStream(source.stream.map((chunk) {
+          sent += chunk.length;
+          if (sent > source!.size) throw const FormatException('File length mismatch');
+          return chunk;
+        })).timeout(const Duration(minutes: 30));
+        onActivity(Activity('Файл скачан устройством', '${safeFilename(path)} · ${peer.name}'));
+      } catch (error) {
+        onActivity(Activity('Скачивание прервано', '$error', error: true));
+        try { await request.response.close(); } catch (_) {}
+      }
+    } finally {
+      try { await source?.close(); } catch (_) {} finally { _downloads--; }
     }
   }
 
