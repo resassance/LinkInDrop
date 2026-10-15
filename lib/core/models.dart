@@ -161,21 +161,62 @@ List<String> connectionHosts(dynamic value) => value is List
   ? value.whereType<String>().where(isConnectionHost).toSet().take(8).toList() : [];
 
 class SharedFile {
-  const SharedFile({required this.id, required this.name, required this.size});
+  const SharedFile({required this.id, required this.name, required this.size,
+    this.folderId, this.relativePath, this.isDirectory = false});
   final String id;
   final String name;
   final int size;
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'size': size};
+  final String? folderId;
+  final String? relativePath;
+  final bool isDirectory;
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'size': size,
+    if (folderId != null) 'folderId': folderId,
+    if (relativePath != null) 'relativePath': relativePath,
+    if (isDirectory) 'directory': true};
   factory SharedFile.fromJson(Map<String, dynamic> value) {
     if (value['id'] is! String ||
         !RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(value['id'] as String) ||
         value['name'] is! String || (value['name'] as String).length > 120 ||
         value['size'] is! int || (value['size'] as int) < 0 ||
-        (value['size'] as int) > maxFileBytes) {
+        (value['size'] as int) > maxFileBytes ||
+        (value['directory'] != null && value['directory'] is! bool) ||
+        (value['folderId'] != null && (value['folderId'] != value['id'] ||
+          value['relativePath'] is! String ||
+          !isSharedPath(value['relativePath'] as String))) ||
+        (value['folderId'] == null &&
+          (value['relativePath'] != null || value['directory'] == true)) ||
+        (value['folderId'] != null && value['directory'] != true &&
+          value['relativePath'] == '')) {
       throw const FormatException('Invalid shared file');
     }
     return SharedFile(id: value['id'] as String,
-      name: safeFilename(value['name'] as String), size: value['size'] as int);
+      name: safeFilename(value['name'] as String), size: value['size'] as int,
+      folderId: value['folderId'] as String?, relativePath: value['relativePath'] as String?,
+      isDirectory: value['directory'] == true);
+  }
+}
+
+// Wire paths always use '/'. Reject drive paths and separators on either OS.
+bool isSharedPath(String path) => path.length <= 2048 &&
+  !RegExp(r'[\\:\x00-\x1f\x7f]').hasMatch(path) &&
+  (path.isEmpty || path.split('/').every((part) =>
+    part.isNotEmpty && part != '.' && part != '..' && part.length <= 255));
+
+class SharedPage {
+  const SharedPage(this.entries, {this.nextOffset});
+  final List<SharedFile> entries;
+  final int? nextOffset;
+  Map<String, dynamic> toJson() => {
+    'files': entries.map((e) => e.toJson()).toList(), 'nextOffset': nextOffset};
+  factory SharedPage.fromJson(Map<String, dynamic> value) {
+    final files = value['files'];
+    final next = value['nextOffset'];
+    if (files is! List || files.length > 200 ||
+        (next != null && (next is! int || next < 1 || next > 100000))) {
+      throw const FormatException('Invalid directory listing');
+    }
+    return SharedPage(files.map((e) => SharedFile.fromJson(e as Map<String, dynamic>)).toList(),
+      nextOffset: next as int?);
   }
 }
 

@@ -10,6 +10,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../core/controller.dart';
 import '../core/models.dart';
+import '../core/android_folders.dart';
+import 'remote_files_dialog.dart';
 
 const mint = Color(0xffb7f779);
 const background = Color(0xff111411);
@@ -180,22 +182,27 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   Future<void> _manageSharedFiles() async {
     final node = c.node;
     if (node == null) return;
-    var entries = await node.sharedFiles.list();
+    Future<List<SharedFile>> ownEntries() async => [
+      ...node.sharedFolders.roots(), ...await node.sharedFiles.list()];
+    var entries = await ownEntries();
     if (!mounted) return;
     await showDialog<void>(context: context, builder: (context) => StatefulBuilder(
       builder: (context, setDialogState) => AlertDialog(
-        title: const Text('Мои общие файлы'),
+        title: const Text('Мои файлы и папки'),
         content: SizedBox(width: 460, height: 320, child: Column(children: [
-          const Text('Привязанные устройства смогут видеть и скачивать только выбранные здесь файлы, пока включён доступ.'),
+          const Text('Привязанные устройства смогут просматривать выбранные папки целиком, включая новые и вложенные файлы. Доступ действует, пока включено скачивание.'),
           const SizedBox(height: 12),
           Expanded(child: ListView(children: [
-            if (entries.isEmpty) const Text('Файлы пока не выбраны'),
-            for (final entry in entries) ListTile(title: Text(entry.name),
-              subtitle: Text(_fileSize(entry.size)),
+            if (entries.isEmpty) const Text('Файлы и папки пока не выбраны'),
+            for (final entry in entries) ListTile(
+              leading: Icon(entry.isDirectory ? Icons.folder_outlined : Icons.insert_drive_file_outlined),
+              title: Text(entry.name),
+              subtitle: Text(entry.isDirectory ? 'Папка со всем содержимым' : _fileSize(entry.size)),
               trailing: IconButton(tooltip: 'Закрыть доступ', icon: const Icon(Icons.remove_circle_outline),
                 onPressed: () async {
-                  await c.run(() => node.sharedFiles.remove(entry.id));
-                  final updated = await node.sharedFiles.list();
+                  await c.run(() => entry.isDirectory
+                    ? node.sharedFolders.remove(entry.id) : node.sharedFiles.remove(entry.id));
+                  final updated = await ownEntries();
                   if (context.mounted) setDialogState(() => entries = updated);
                 })),
           ])),
@@ -207,7 +214,22 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
               await c.run(() async {
                 for (final file in files) { await node.sharedFiles.add(file.path); }
               });
-              final updated = await node.sharedFiles.list();
+              final updated = await ownEntries();
+              if (context.mounted) setDialogState(() => entries = updated);
+            }),
+          OutlinedButton.icon(icon: const Icon(Icons.create_new_folder_outlined), label: const Text('Добавить папку'),
+            onPressed: () async {
+              await c.run(() async {
+                if (c.isAndroid) {
+                  final selected = await const AndroidFolders().pick();
+                  if (selected != null) await node.sharedFolders.add(selected['uri'] as String,
+                    name: selected['name'] as String?);
+                } else {
+                  final selected = await getDirectoryPath(confirmButtonText: 'Открыть доступ к папке');
+                  if (selected != null) await node.sharedFolders.add(selected);
+                }
+              });
+              final updated = await ownEntries();
               if (context.mounted) setDialogState(() => entries = updated);
             })])));
   }
@@ -216,28 +238,9 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     final peer = c.selectedPeer;
     final node = c.node;
     if (peer == null || node == null) return;
-    var pending = node.listFiles(peer);
-    final chosen = await showDialog<SharedFile>(context: context, builder: (context) => StatefulBuilder(
-      builder: (context, setDialogState) => AlertDialog(
-        title: Text('Файлы: ${peer.name}'),
-        content: SizedBox(width: 460, height: 320, child: FutureBuilder<List<SharedFile>>(
-          future: pending, builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) return SingleChildScrollView(child: SelectableText(
-              '${snapshot.error}\n\nВключите доступ к общим файлам на другом устройстве. Обновите Nearbridge на обоих устройствах.'));
-            final entries = snapshot.data!;
-            if (entries.isEmpty) return const Text('На устройстве пока нет общих файлов. Добавьте их в «Мои общие файлы» на том устройстве.');
-            return ListView(children: [for (final entry in entries) ListTile(
-              leading: const Icon(Icons.insert_drive_file_outlined),
-              title: Text(entry.name), subtitle: Text(_fileSize(entry.size)),
-              trailing: IconButton(tooltip: 'Скачать', icon: const Icon(Icons.download_rounded),
-                onPressed: !c.receiveFiles ? null : () => Navigator.pop(context, entry)))]);
-          })),
-        actions: [TextButton(onPressed: () => setDialogState(() => pending = node.listFiles(peer)),
-          child: const Text('Обновить')),
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))])));
+    final chosen = await showDialog<SharedFile>(context: context, builder: (context) => RemoteFilesDialog(
+      deviceName: peer.name, canDownload: c.receiveFiles,
+      load: (folder, offset) => node.browseFiles(peer, folder: folder, offset: offset)));
     if (chosen != null) await c.run(() => node.downloadFile(peer, chosen));
   }
 
@@ -411,9 +414,9 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         icon: const Icon(Icons.attach_file_rounded), label: const Text('Выбрать файлы')),
       OutlinedButton.icon(onPressed: c.busy || c.selectedPeer == null ? null : _browseFiles,
         icon: const Icon(Icons.folder_open_rounded), label: const Text('Файлы устройства')),
-      TextButton(onPressed: c.busy ? null : _manageSharedFiles, child: const Text('Мои общие файлы')),
+      TextButton(onPressed: c.busy ? null : _manageSharedFiles, child: const Text('Мои файлы и папки')),
     ]),
-    SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Разрешить скачивание моих общих файлов'),
+    SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Разрешить доступ к моим файлам и папкам'),
       subtitle: const Text('Доступ только для привязанных устройств', style: TextStyle(color: subdued)),
       value: c.shareFiles, onChanged: (value) => unawaited(c.setSettings(fileSharing: value))),
     if (c.pendingFiles.isNotEmpty) ...[

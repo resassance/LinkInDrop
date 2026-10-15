@@ -11,6 +11,7 @@ import 'clipboard_adapter.dart';
 import 'models.dart';
 import 'node.dart';
 import 'windows_network.dart';
+import 'android_folders.dart';
 
 class BridgeController extends ChangeNotifier {
   BridgeController({ClipboardAdapter? clipboard}) : clipboard = clipboard ?? ClipboardAdapter();
@@ -65,6 +66,7 @@ class BridgeController extends ChangeNotifier {
         shareFiles = data['shareFiles'] as bool? ?? false;
       }
       node = BridgeNode(directory: directory!, name: deviceName,
+        folderProvider: isAndroid ? const AndroidFolders() : null,
         onPairRequest: (name) async => await pairingApproval?.call(name) ?? false,
         onClipboard: _receiveClipboard, onActivity: record, onChanged: notifyListeners);
       await node!.start();

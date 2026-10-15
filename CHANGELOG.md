@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Select shared folders on Windows/Linux or Android's system document picker; keep grants after a restart.
+- Browse nested folders, return to parents, refresh and load additional directory pages.
+- Download files directly from a selected folder without copying its whole subtree into app storage.
+- Revoke an entire folder grant, reject traversal and symlinks, and keep app-private storage outside the shared view.
+- Keep individual-file sharing compatible with alpha.3 devices.
+
 ## 0.1.0-alpha.3
 
 - Probe alternative LAN/VPN adapter addresses concurrently during pairing and reconnection, with pinned TLS and device authentication.
