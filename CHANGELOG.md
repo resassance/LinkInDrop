@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0-alpha.3
+
+- Open the receive directory from the transfer panel; expose the Android private inbox through a read-only DocumentsProvider.
+- Mark the desktop drop zone and allow choosing a recipient after dropping files.
+- Compact the dashboard and collapse clipboard, settings and diagnostic sections.
+- Use a full-screen mobile file browser, wide filenames and a single action menu per row.
+- Sort loose incoming files into media/document/archive/application categories while preserving transferred folder trees.
+- Add an explicit Android direct Wi-Fi mode with route status and NekoBox LAN guidance; other apps retain their VPN route.
+- Open the tray context menu on right-click with a complete application exit action.
+
 ## 0.3.0-alpha.2
 
 - Stabilize the page scrollbar and preserve scroll position during transfer updates.

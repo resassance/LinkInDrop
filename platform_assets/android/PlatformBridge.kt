@@ -28,11 +28,25 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
     fun attach(value: MainActivity) { activity = value }
     fun detach(value: MainActivity) { if (activity === value) activity = null }
     fun shared() { channel.invokeMethod("shared", null) }
+    private val localNetwork = LocalNetwork(context) { channel.invokeMethod("localNetworkChanged", null) }
     init {
         channel.setMethodCallHandler { call, result ->
             if (folders.handle(call, result)) return@setMethodCallHandler
             try {
                 when (call.method) {
+                    "setDirectWifi" -> result.success(localNetwork.setEnabled(call.argument<Boolean>("enabled") == true))
+                    "localNetworkStatus" -> result.success(localNetwork.status())
+                    "openReceivedFolder" -> {
+                        val tree = call.argument<String>("tree")
+                        val uri = if (tree == null) android.provider.DocumentsContract.buildRootUri("${context.packageName}.received", "received") else android.provider.DocumentsContract.buildDocumentUriUsingTree(Uri.parse(tree), android.provider.DocumentsContract.getTreeDocumentId(Uri.parse(tree)))
+                        val type = if (tree == null) android.provider.DocumentsContract.Root.MIME_TYPE_ITEM else android.provider.DocumentsContract.Document.MIME_TYPE_DIR
+                        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, type).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        try { context.startActivity(intent) }
+                        catch (_: android.content.ActivityNotFoundException) {
+                            context.startActivity(Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE).putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, if (tree == null) android.provider.DocumentsContract.buildDocumentUri("${context.packageName}.received", "received") else uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                        result.success(null)
+                    }
                     "setBackgroundSettings" -> {
                         val enabled = call.argument<Boolean>("enabled") == true
                         val boot = enabled && call.argument<Boolean>("boot") == true

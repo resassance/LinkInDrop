@@ -39,7 +39,7 @@ class NearbridgeApp extends StatelessWidget {
       inputDecorationTheme: InputDecorationTheme(filled: true, fillColor: background,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none)),
       filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))),
       snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating)),
     home: BridgeHome(controller: controller, start: start));
@@ -56,6 +56,7 @@ class BridgeHome extends StatefulWidget {
 class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   BridgeController get c => widget.controller;
   String? _draggingPeer;
+  bool _dropping = false;
   final _scroll = ScrollController();
 
   @override
@@ -390,7 +391,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
 
   Widget _settings() {
     final backup = c.backup;
-    return _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       if (c.isAndroid) BackgroundSettings(controller: c),
       const Text('Фоновая работа и подключение', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
       if (Platform.isWindows || Platform.isLinux) ...[
@@ -434,7 +435,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         Text(!backup.enabled ? 'Копирование выключено · скопировано: ${backup.copied}' : backup.scanning ? 'Проверяем новые снимки…' : 'Скопировано: ${backup.copied}', style: const TextStyle(color: subdued)),
         if (backup.lastError != null) SelectableText(backup.lastError!, style: const TextStyle(color: Colors.redAccent)),
       ],
-    ]));
+    ]);
   }
 
   Future<void> _sendText() async {
@@ -496,12 +497,10 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           const SizedBox(width: 12), const Expanded(child: Text('nearbridge', maxLines: 1,
             overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 25, fontWeight: FontWeight.w700))),
           _badge(appVersion, subdued)]),
-        const SizedBox(height: 32),
-        Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Ваши устройства.\nОдин буфер.', style: TextStyle(fontSize: 34, height: 1.15, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 12), Text(c.deviceName, style: const TextStyle(color: subdued, fontSize: 15)),
-        ])), IconButton(onPressed: _rename, tooltip: 'Имя устройства', icon: const Icon(Icons.edit_outlined))]),
-        const SizedBox(height: 24),
+        const SizedBox(height: 6),
+        Row(children: [Expanded(child: Text(c.deviceName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: subdued))),
+          IconButton(onPressed: _rename, tooltip: 'Имя устройства', icon: const Icon(Icons.edit_outlined), visualDensity: VisualDensity.compact)]),
+        const SizedBox(height: 12),
         if (c.loading) const Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator())),
         if (c.startupError != null) _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Не удалось запустить соединение', style: TextStyle(fontSize: 18)),
@@ -510,22 +509,22 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         if (!c.loading && c.startupError == null) ...[
           LayoutBuilder(builder: (context, constraints) {
             final devices = _devices();
-            final clipboard = _clipboard();
-            if (constraints.maxWidth < 760) return Column(children: [devices, const SizedBox(height: 16), clipboard]);
+            final transfers = _transfers();
+            if (constraints.maxWidth < 760) return Column(children: [devices, const SizedBox(height: 12), transfers]);
             return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(flex: 5, child: devices), const SizedBox(width: 20), Expanded(flex: 6, child: clipboard)]);
+              Expanded(flex: 5, child: devices), const SizedBox(width: 12), Expanded(flex: 6, child: transfers)]);
           }),
-          const SizedBox(height: 20),
-          _transfers(),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           _queue(),
-          const SizedBox(height: 20),
-          _settings(),
-          const SizedBox(height: 16),
-          _panel(ReliabilityPanel(controller: c, openFolder: (peer, folder) => _browseFiles(target: peer, initial: folder))),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
+          _section('Общий буфер', Icons.content_paste, _clipboard()),
+          const SizedBox(height: 12),
+          _section('Настройки и фотобэкап', Icons.settings_outlined, _settings()),
+          const SizedBox(height: 12),
+          _section('Хранение и подключение', Icons.tune, ReliabilityPanel(controller: c, openFolder: (peer, folder) => _browseFiles(target: peer, initial: folder))),
+          const SizedBox(height: 12),
           _history(),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           const Text('Локальная сеть или VPN · без аккаунта · проверка сертификата',
             style: TextStyle(color: subdued, fontSize: 12)),
         ],
@@ -589,10 +588,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
       }, child: tile);
   }
 
-  Widget _clipboard() => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Row(children: [const Icon(Icons.content_paste_rounded, color: mint), const SizedBox(width: 10),
-      const Expanded(child: Text('Общий буфер', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)))]),
-    const SizedBox(height: 18),
+  Widget _clipboard() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     const Text('Текст, ссылки и изображения', style: TextStyle(fontSize: 18)),
     const SizedBox(height: 8),
     Text(c.isAndroid ? 'Для отправки откройте Nearbridge и нажмите «Отправить буфер» или используйте «Поделиться».'
@@ -610,13 +606,14 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         icon: const Icon(Icons.send_rounded, size: 18), label: const Text('Отправить буфер')),
       TextButton(onPressed: c.busy || c.onlineCount == 0 ? null : _sendText, child: const Text('Написать текст')),
     ]),
-  ]));
+  ]);
 
   Widget _transfers() => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [const Icon(Icons.file_upload_outlined, color: mint), const SizedBox(width: 10),
       const Expanded(child: Text('Передача файлов', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
       Switch(value: c.receiveFiles, onChanged: (value) => unawaited(c.setSettings(filesReceiving: value)))]),
     const SizedBox(height: 12),
+    if (!c.isAndroid && (Platform.isWindows || Platform.isLinux)) ...[_dropZone(), const SizedBox(height: 10)],
     Text(c.selectedPeer == null ? 'Выберите устройство выше, затем отправьте файлы.' : 'Получатель: ${c.selectedPeer!.name}',
       style: const TextStyle(color: subdued)),
     const SizedBox(height: 16),
@@ -626,6 +623,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
       OutlinedButton.icon(onPressed: c.node == null ? null : _browseFiles,
         icon: const Icon(Icons.folder_open_rounded), label: const Text('Файлы устройства')),
       TextButton(onPressed: c.busy ? null : _manageSharedFiles, child: const Text('Мои файлы и папки')),
+      OutlinedButton.icon(onPressed: c.node == null ? null : () => c.run(c.openReceivedFolder), icon: const Icon(Icons.download_done), label: const Text('Полученные файлы')),
     ]),
     SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Разрешить доступ к моим файлам и папкам'),
       subtitle: const Text('Доступ только для привязанных устройств', style: TextStyle(color: subdued)),
@@ -642,7 +640,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
       TextButton(onPressed: c.node!.cancelTransfer, child: const Text('Отменить передачу')),
     ],
     const SizedBox(height: 14),
-    const Text('До 8 ТБ на файл. Полученные файлы доступны в списке ниже.', style: TextStyle(color: subdued, fontSize: 12)),
+    const Text('До 8 ТБ на файл. Папка получения — кнопка «Полученные файлы».', style: TextStyle(color: subdued, fontSize: 12)),
   ]));
 
   Widget _history() => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -650,7 +648,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     const SizedBox(height: 12),
     if (c.activities.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 16),
       child: Text('Здесь появятся результаты передачи. Содержимое буфера не сохраняется.', style: TextStyle(color: subdued))),
-    for (final activity in c.activities.take(12)) ListTile(contentPadding: EdgeInsets.zero,
+    for (final activity in c.activities.take(5)) ListTile(contentPadding: EdgeInsets.zero,
       onTap: () => _showActivity(activity),
       leading: Icon(activity.error ? Icons.error_outline_rounded : activity.path != null
         ? Icons.insert_drive_file_outlined : Icons.check_circle_outline_rounded,
@@ -669,8 +667,42 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         })),
   ]));
 
-  Widget _panel(Widget child) => Container(width: double.infinity, padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 500 ? 14 : 22),
-    decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(22),
+  Future<void> _dropFiles(List<String> paths) async {
+    var peer = c.selectedPeer;
+    if (peer == null && c.peers.isNotEmpty) {
+      peer = await showDialog<Peer>(context: context, builder: (context) => SimpleDialog(title: const Text('Куда отправить файлы?'),
+        children: c.peers.map((device) => SimpleDialogOption(onPressed: () => Navigator.pop(context, device), child: Text(device.name))).toList()));
+    }
+    if (!mounted) return;
+    if (peer == null) {
+      if (c.peers.isEmpty) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сначала добавьте устройство')));
+      return;
+    }
+    try { await c.enqueuePaths(peer, paths); }
+    catch (error) { c.record(Activity('Не получилось отправить', '$error', error: true)); }
+  }
+
+  Widget _dropZone() => DropTarget(
+    onDragEntered: (_) => setState(() => _dropping = true),
+    onDragExited: (_) => setState(() => _dropping = false),
+    onDragDone: (details) { setState(() => _dropping = false); unawaited(_dropFiles(details.files.map((file) => file.path).toList())); },
+    child: Container(key: const ValueKey('file-drop-zone'), width: double.infinity, padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: mint.withValues(alpha: _dropping ? 0.16 : 0.04), borderRadius: BorderRadius.circular(12), border: Border.all(color: mint.withValues(alpha: _dropping ? 1 : 0.55), width: 2)),
+      child: Row(children: [const Icon(Icons.drive_folder_upload_outlined, size: 32, color: mint), const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(_dropping ? 'Отпустите, чтобы отправить' : 'Перетащите сюда файлы или папки', style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(c.selectedPeer == null ? 'Получателя можно выбрать после перетаскивания' : 'На ${c.selectedPeer!.name}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: subdued)),
+        ])),
+      ])));
+
+  Widget _section(String title, IconData icon, Widget child) => Container(
+    decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xff30382f))),
+    child: ExpansionTile(key: PageStorageKey(title), shape: const Border(), collapsedShape: const Border(),
+      leading: Icon(icon, color: mint), title: Text(title), tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+      childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14), children: [child]));
+
+  Widget _panel(Widget child) => Container(width: double.infinity, padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 500 ? 12 : 16),
+    decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(16),
       border: Border.all(color: const Color(0xff30382f))), child: child);
 
   Widget _badge(String text, Color color) => Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

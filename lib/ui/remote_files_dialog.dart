@@ -129,65 +129,64 @@ class _RemoteFilesDialogState extends State<RemoteFilesDialog> {
     : bytes < 1024 * 1024 ? '${(bytes / 1024).toStringAsFixed(1)} КБ'
     : '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ';
 
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text('Файлы: ${widget.deviceName}'),
-    insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-    content: SizedBox(width: 520, height: MediaQuery.sizeOf(context).height < 600 ? 260 : 400, child: Column(children: [
-      Row(children: [
-        if (_folders.isNotEmpty) IconButton(tooltip: 'Назад', onPressed: _back,
-          icon: const Icon(Icons.arrow_back_rounded)),
-        Expanded(child: Text(_folders.isEmpty ? 'Общие файлы и папки' : _folders.last.name,
-          maxLines: 2, overflow: TextOverflow.ellipsis)),
-        IconButton(tooltip: 'Обновить', onPressed: _loading ? null : () => _load(reset: true),
-          icon: const Icon(Icons.refresh_rounded)),
-      ]),
-      if (_folders.isNotEmpty) Align(alignment: Alignment.centerLeft,
-        child: TextButton(onPressed: () {
-          _folders.clear();
-          _query.clear();
-          unawaited(_load(reset: true));
-        }, child: const Text('К общему списку'))),
-      if (!widget.canDownload) const Text('Включите приём файлов, чтобы скачивать их.'),
-      if (widget.search != null) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: TextField(
-        controller: _query, decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Поиск в папке и подпапках'),
-        onChanged: (_) { _debounce?.cancel(); _debounce = Timer(const Duration(milliseconds: 400), () => unawaited(_load(reset: true))); })),
-      const SizedBox(height: 8),
-      Expanded(child: _loading && _entries.isEmpty
-        ? const Center(child: CircularProgressIndicator())
-        : ListView(children: [
-          if (_error != null) Padding(padding: const EdgeInsets.all(8),
-            child: SelectableText('$_error\n\nПроверьте доступ к папке на другом устройстве.')),
-          if (_entries.isEmpty && _error == null) Padding(padding: const EdgeInsets.all(8),
-            child: Text(_folders.isEmpty
-              ? 'Общих файлов и папок пока нет. Выберите их на другом устройстве.'
-              : 'Папка пуста или в ней нет доступных файлов.')),
-          for (final entry in _entries) ListTile(
-            leading: !entry.isDirectory && widget.preview != null && RegExp(r'\.(png|jpe?g|webp|gif)$', caseSensitive: false).hasMatch(entry.name)
-              ? _Thumbnail(load: () => _preview(entry)) : Icon(entry.isDirectory ? Icons.folder_outlined : Icons.insert_drive_file_outlined),
-            title: Text(entry.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-            subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(entry.isDirectory ? 'Папка' : _size(entry.size)),
-              if (entry.isDirectory) Wrap(children: [
-                if (widget.toggleFavorite != null) IconButton(tooltip: 'Избранная папка',
-                  icon: Icon(widget.isFavorite?.call(entry) == true ? Icons.star : Icons.star_outline), onPressed: () async {
-                    await widget.toggleFavorite!(entry); if (mounted) setState(() {});
-                  }),
-                IconButton(tooltip: 'Скачать папку', icon: const Icon(Icons.download_rounded),
-                  onPressed: _loading || !widget.canDownload ? null : () => Navigator.pop(context, entry)),
-              ])
-              else IconButton(tooltip: 'Скачать', icon: const Icon(Icons.download_rounded),
-                onPressed: _loading || !widget.canDownload ? null : () => Navigator.pop(context, entry)),
-            ]),
-            onTap: _loading ? null : entry.isDirectory ? () {
-              _enter(entry);
-            } : () => _showPreview(entry)),
-          if (_loading) const Center(child: CircularProgressIndicator()),
-          if ((_nextOffset != null || _cursor != null) && !_loading) TextButton(
-            onPressed: () => _load(reset: false), child: Text(_cursor != null ? 'Продолжить поиск' : 'Показать ещё')),
+  Widget _entry(SharedFile entry) => InkWell(
+    onTap: _loading ? null : entry.isDirectory ? () => _enter(entry) : () => _showPreview(entry),
+    child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), child: Row(children: [
+      SizedBox(width: 28, height: 32, child: !entry.isDirectory && widget.preview != null && RegExp(r'\.(png|jpe?g|webp|gif)$', caseSensitive: false).hasMatch(entry.name)
+        ? _Thumbnail(load: () => _preview(entry)) : Icon(entry.isDirectory ? Icons.folder_outlined : Icons.insert_drive_file_outlined)),
+      const SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(entry.name, key: ValueKey('remote-name:${entry.relativePath ?? entry.id}'), maxLines: 2, overflow: TextOverflow.ellipsis),
+        Text(entry.isDirectory ? 'Папка' : _size(entry.size), style: Theme.of(context).textTheme.bodySmall),
+      ])),
+      SizedBox(width: 40, child: PopupMenuButton<String>(tooltip: 'Действия: ${entry.name}',
+        onSelected: (action) async {
+          if (action == 'download') Navigator.pop(context, entry);
+          if (action == 'favorite') { await widget.toggleFavorite!(entry); if (mounted) setState(() {}); }
+        }, itemBuilder: (_) => [
+          PopupMenuItem(value: 'download', enabled: !_loading && widget.canDownload,
+            child: Text(entry.isDirectory ? 'Скачать папку' : 'Скачать')),
+          if (entry.isDirectory && widget.toggleFavorite != null) PopupMenuItem(value: 'favorite',
+            child: Text(widget.isFavorite?.call(entry) == true ? 'Убрать из избранного' : 'В избранное')),
         ])),
-    ])),
-    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))]);
+    ])));
+
+  Widget _browser() => Scaffold(
+    appBar: AppBar(automaticallyImplyLeading: false, titleSpacing: 12,
+      title: Text(widget.deviceName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18)),
+      actions: [IconButton(tooltip: 'Обновить', onPressed: _loading ? null : () => _load(reset: true), icon: const Icon(Icons.refresh)),
+        IconButton(tooltip: 'Закрыть', onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close))]),
+    body: Column(children: [
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Row(children: [
+        if (_folders.isNotEmpty) IconButton(tooltip: 'Назад', onPressed: _back, icon: const Icon(Icons.arrow_back))
+        else const Padding(padding: EdgeInsets.all(12), child: Icon(Icons.folder_shared_outlined)),
+        Expanded(child: Text(_folders.isEmpty ? 'Общие файлы и папки' : _folders.last.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+        if (_folders.isNotEmpty) IconButton(tooltip: 'К общему списку', icon: const Icon(Icons.home_outlined), onPressed: () {
+          _folders.clear(); _query.clear(); unawaited(_load(reset: true));
+        }),
+      ])),
+      if (!widget.canDownload) const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Включите приём файлов, чтобы скачивать их.')),
+      if (widget.search != null) Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 8), child: TextField(
+        controller: _query, decoration: const InputDecoration(isDense: true, prefixIcon: Icon(Icons.search), hintText: 'Поиск файлов'),
+        onChanged: (_) { _debounce?.cancel(); _debounce = Timer(const Duration(milliseconds: 400), () => unawaited(_load(reset: true))); })),
+      const Divider(height: 1),
+      Expanded(child: _loading && _entries.isEmpty ? const Center(child: CircularProgressIndicator()) : ListView(children: [
+        if (_error != null) Padding(padding: const EdgeInsets.all(12), child: SelectableText('$_error\n\nПроверьте доступ к папке на другом устройстве.')),
+        if (_entries.isEmpty && _error == null) Padding(padding: const EdgeInsets.all(12), child: Text(_folders.isEmpty
+          ? 'Общих файлов и папок пока нет. Выберите их на другом устройстве.' : 'Папка пуста или в ней нет доступных файлов.')),
+        for (final entry in _entries) _entry(entry),
+        if (_loading) const Center(child: CircularProgressIndicator()),
+        if ((_nextOffset != null || _cursor != null) && !_loading) TextButton(onPressed: () => _load(reset: false),
+          child: Text(_cursor != null ? 'Продолжить поиск' : 'Показать ещё')),
+      ])),
+    ]));
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    if (size.width < 600) return Dialog.fullscreen(child: _browser());
+    return Dialog(clipBehavior: Clip.antiAlias, child: SizedBox(width: 720, height: size.height * 0.85, child: _browser()));
+  }
 }
 
 class _Thumbnail extends StatefulWidget {

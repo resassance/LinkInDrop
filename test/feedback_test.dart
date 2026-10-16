@@ -195,11 +195,18 @@ void main() {
       expect(scroll.pixels, closeTo(offset, 0.1));
       expect(scroll.maxScrollExtent, closeTo(extent, 0.1));
       expect(tester.widget<OutlinedButton>(find.ancestor(of: find.text('Файлы устройства'), matching: find.byWidgetPredicate((widget) => widget is OutlinedButton))).onPressed, isNotNull);
+      controller.busy = false;
+      await tester.ensureVisible(find.text('Настройки и фотобэкап'));
+      await tester.tap(find.text('Настройки и фотобэкап'));
+      await tester.pumpAndSettle();
       controller.backup!.enabled = true; controller.changed();
       await tester.pump();
       final toggle = tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, 'Автоматически копировать новые фото'));
       expect(toggle.onChanged, isNotNull);
       controller.backup!.enabled = false;
+      await tester.ensureVisible(find.text('Настройки и фотобэкап'));
+      await tester.tap(find.text('Настройки и фотобэкап'));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: 'width $width');
       controller.busy = false;
       if (width == 320) {

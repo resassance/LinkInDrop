@@ -59,6 +59,8 @@ class _ReliabilityPanelState extends State<ReliabilityPanel> {
   Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     const Text('Получение и надёжность', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
     const SizedBox(height: 12),
+    OutlinedButton.icon(onPressed: c.node == null ? null : () => c.run(c.openReceivedFolder), icon: const Icon(Icons.folder_open), label: const Text('Открыть полученные файлы')),
+    SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Раскладывать файлы по типам'), subtitle: const Text('Фото, Видео, Музыка, Документы и другие. Структура переданных папок сохраняется.'), value: c.sortReceived, onChanged: (value) => c.run(() => c.setSortReceived(value))),
     Text('Папка получения: ${c.receiveDestination ?? 'Встроенная папка Nearbridge'}'),
     Wrap(spacing: 8, children: [
       TextButton.icon(onPressed: c.busy || c.node == null ? null : _chooseDestination, icon: const Icon(Icons.folder_open), label: const Text('Выбрать папку получения')),
@@ -81,6 +83,16 @@ class _ReliabilityPanelState extends State<ReliabilityPanel> {
         DropdownMenuItem(value: 16777216, child: Text('16 МБ/с'))],
       onChanged: c.node == null ? null : (value) => c.run(() => c.setSpeedLimit(value!))),
     const Divider(height: 32),
+    if (c.isAndroid) ...[
+      SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Nearbridge через Wi-Fi мимо VPN'),
+        subtitle: const Text('Только для Nearbridge. Весь его трафик, включая ретранслятор и проверку обновлений, пойдёт напрямую через Wi-Fi.'),
+        value: c.androidDirectWifi, onChanged: (value) => c.run(() => c.setDirectWifi(value))),
+      Text(c.localNetwork['direct'] == true ? 'Прямой маршрут Wi-Fi выбран' : c.androidDirectWifi && c.localNetwork['wifi'] != true ? 'Ожидается подключение к Wi-Fi' : 'Используется системный маршрут'),
+      if (c.localNetwork['error'] != null) Text(c.localNetwork['error'] as String),
+      const Text('NekoBox: включите обход локальной сети (Bypass LAN) или исключите Nearbridge из VPN-маршрутизации. Системный запрет соединений без VPN может блокировать прямой режим.'),
+      TextButton(onPressed: () => c.run(() => c.refreshLocalNetwork(reconnect: true)), child: const Text('Проверить маршрут')),
+      const SizedBox(height: 12),
+    ],
     const Text('Диагностика соединений', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
     for (final peer in c.peers) ListTile(contentPadding: EdgeInsets.zero, title: Text(peer.name),
       subtitle: Text('${peer.online ? peer.routeLabel : 'Не в сети'}${peer.latencyMs == null ? '' : ' · ${peer.latencyMs} мс'}${peer.connectionFailure == null ? '' : '\n${const {'certificate': 'Не совпал сертификат устройства', 'timeout': 'Истекло время подключения', 'authorization': 'Устройство отклонило авторизацию', 'unreachable': 'Нет доступного маршрута'}[peer.connectionFailure] ?? 'Ошибка соединения'}'}')),
