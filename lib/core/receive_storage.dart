@@ -41,7 +41,15 @@ class ReceiveStorage {
   Future<void> _delivering = Future.value();
   final channel = const MethodChannel('nearbridge/system');
 
+  Future<void> _protectDestination(String root, String relative) async {
+    if (await Directory(root).resolveSymbolicLinks() != root) throw const FileSystemException('Unsafe destination');
+    final private = await directory.resolveSymbolicLinks();
+    final target = p.joinAll([root, ...portablePath(relative).split('/')]);
+    if (p.equals(private, target) || p.isWithin(private, target)) throw const FileSystemException('Нельзя получать файлы в служебные данные Nearbridge');
+  }
+
   Future<void> createDirectory(String relative) async {
+    if (destination != null && !destination!.startsWith('content://')) await _protectDestination(destination!, relative);
     await inboxDirectory(inbox, relative);
     if (destination == null) return;
     if (destination!.startsWith('content://')) {
@@ -125,6 +133,7 @@ class ReceiveStorage {
       final folder = Directory(root);
       final canonical = await folder.resolveSymbolicLinks();
       if (canonical != root || (destination != null && (p.equals(canonical, directory.path) || p.isWithin(directory.path, canonical)))) throw const FileSystemException('Выберите папку вне данных Nearbridge');
+      if (destination != null) await _protectDestination(root, relative);
       await requireSpace(root, size);
       var relativeName = portablePath(relative);
       var target = File(p.joinAll([root, ...relativeName.split('/')]));
