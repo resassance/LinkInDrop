@@ -623,7 +623,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
       OutlinedButton.icon(onPressed: c.node == null ? null : _browseFiles,
         icon: const Icon(Icons.folder_open_rounded), label: const Text('Файлы устройства')),
       TextButton(onPressed: c.busy ? null : _manageSharedFiles, child: const Text('Мои файлы и папки')),
-      OutlinedButton.icon(onPressed: c.node == null ? null : () => c.run(c.openReceivedFolder), icon: const Icon(Icons.download_done), label: const Text('Полученные файлы')),
+      OutlinedButton.icon(onPressed: c.node == null ? null : c.revealReceivedFolder, icon: const Icon(Icons.download_done), label: const Text('Полученные файлы')),
     ]),
     SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Разрешить доступ к моим файлам и папкам'),
       subtitle: const Text('Доступ только для привязанных устройств', style: TextStyle(color: subdued)),
@@ -648,7 +648,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     const SizedBox(height: 12),
     if (c.activities.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 16),
       child: Text('Здесь появятся результаты передачи. Содержимое буфера не сохраняется.', style: TextStyle(color: subdued))),
-    for (final activity in c.activities.take(5)) ListTile(contentPadding: EdgeInsets.zero,
+    for (final activity in c.activities.take(12)) ListTile(contentPadding: EdgeInsets.zero,
       onTap: () => _showActivity(activity),
       leading: Icon(activity.error ? Icons.error_outline_rounded : activity.path != null
         ? Icons.insert_drive_file_outlined : Icons.check_circle_outline_rounded,
