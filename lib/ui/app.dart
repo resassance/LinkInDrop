@@ -339,7 +339,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         leading: Icon(job.kind == 'download' ? Icons.download_rounded : job.kind == 'backup' ? Icons.photo_library_outlined : Icons.upload_rounded),
         title: Text(job.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('${labels[job.state] ?? job.state}${job.state == 'running' ? ' · ${(job.progress * 100).round()}%' : ''}', style: const TextStyle(color: subdued)),
+          Text('${job.state == 'completed' && job.skipped ? 'Пропущено' : labels[job.state] ?? job.state}${job.state == 'running' ? ' · ${(job.progress * 100).round()}%' : ''}', style: const TextStyle(color: subdued)),
           if (job.error != null) Text(job.error!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.redAccent)),
           if (job.state == 'running') ...[
             Text('${_fileSize(job.doneBytes)} / ${_fileSize(job.totalBytes)} · ${_fileSize(job.bytesPerSecond.round())}/с${job.remainingSeconds == null ? '' : ' · осталось ${_remaining(job.remainingSeconds!)}'}'),

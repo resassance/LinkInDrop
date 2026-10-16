@@ -9,6 +9,7 @@ import 'package:nearbridge/core/receive_storage.dart';
 import 'package:nearbridge/core/release_info.dart';
 import 'package:nearbridge/core/shared_folders.dart';
 import 'package:nearbridge/core/transfer_queue.dart';
+import 'package:nearbridge/core/photo_backup.dart';
 
 void main() {
   test('release ordering distinguishes stable versions, alpha versions and numbers', () {
@@ -36,6 +37,7 @@ void main() {
       expect(await storage.verify('other-peer', storage.key('peer', 'rename'), digest), isFalse);
       await File(renamed['location'] as String).writeAsString('corrupt');
       expect(await storage.verify('peer', storage.key('peer', 'rename'), digest), isFalse);
+      await expectLater(storage.open('peer', storage.key('peer', 'rename'), 0, 4), throwsA(isA<FileSystemException>()));
       storage.conflict = 'skip';
       final skipped = await storage.deliver('peer', 'skip', await source('skip'), 'photo.jpg', digest);
       expect(skipped['skipped'], isTrue);
@@ -116,6 +118,39 @@ void main() {
       expect(peer.latencyMs, isNotNull);
     } finally { await sender.stop(); await receiver.stop(); await root.delete(recursive: true); }
   }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('photo verification makes a lost copy eligible for repair without changing originals', () async {
+    final root = await Directory.systemTemp.createTemp('nearbridge-backup-verify-');
+    final private = await Directory('${root.path}/private').create();
+    final photos = await Directory('${root.path}/Camera').create();
+    final original = await File('${photos.path}/photo.jpg').writeAsString('original-photo');
+    final jobs = <TransferJob>[];
+    var remoteValid = true;
+    final backup = PhotoBackup(directory: private, sources: SharedFolders(private, stateFilename: 'backup-folders.json'),
+      enqueue: (batch) async => jobs.addAll(batch), available: (_) => true, changed: () {},
+      verifyCopy: (_, __, ___) async => remoteValid);
+    try {
+      await backup.load([]); await backup.sources.add(photos.path);
+      backup.peerId = 'peer'; backup.enabled = true;
+      await backup.scan(); expect(jobs.length, 1);
+      jobs.single.receipt = 'receipt'; await backup.completed(jobs.single);
+      await backup.verify(); expect(backup.verified, 1); expect(backup.missing, 0);
+      remoteValid = false;
+      await backup.verify(); expect(backup.missing, 1);
+      await backup.scan(); expect(jobs.length, 2);
+      expect(await original.readAsString(), 'original-photo');
+    } finally { await backup.close(); await root.delete(recursive: true); }
+  });
+
+  test('free space preflight rejects an impossible reservation before writing data', () async {
+    final root = await Directory.systemTemp.createTemp('nearbridge-space-');
+    try {
+      final available = await freeBytes(root.path);
+      expect(available, isNotNull);
+      await expectLater(requireSpace(root.path, available! + 1), throwsA(isA<InsufficientSpace>()));
+      expect(await root.list().isEmpty, isTrue);
+    } finally { await root.delete(); }
+  });
 
   test('shared files larger than 2 GiB support 64 bit ranged offsets', () async {
     final root = await Directory.systemTemp.createTemp('nearbridge-large-range-');

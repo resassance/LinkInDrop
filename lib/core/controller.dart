@@ -345,14 +345,15 @@ class BridgeController extends ChangeNotifier {
     var lastTime = 0;
     void update() {
       if (node!.transferTotal > 0 && node!.transferName != null) job.totalBytes = node!.transferTotal;
-      final done = ((node!.transferProgress ?? 0) * job.totalBytes).round();
+      final done = node!.transferName == null ? job.doneBytes : node!.transferBytes;
       final elapsed = clock.elapsedMilliseconds;
-      if (done > lastBytes && elapsed > lastTime) {
-        final rate = (done - lastBytes) * 1000 / (elapsed - lastTime);
+      final sent = node!.sessionBytes;
+      if (sent > lastBytes && elapsed > lastTime) {
+        final rate = (sent - lastBytes) * 1000 / (elapsed - lastTime);
         job.bytesPerSecond = job.bytesPerSecond == 0 ? rate : job.bytesPerSecond * 0.7 + rate * 0.3;
-        lastBytes = done; lastTime = elapsed;
+        lastBytes = sent; lastTime = elapsed;
       }
-      progress(node!.transferProgress ?? job.progress);
+      progress(node!.transferName != null && job.totalBytes > 0 ? (done / job.totalBytes).clamp(0.0, 1.0) : node!.transferProgress ?? job.progress);
     }
     final timer = Timer.periodic(const Duration(milliseconds: 200), (_) => update());
     try {
@@ -362,6 +363,7 @@ class BridgeController extends ChangeNotifier {
         await node!.uploadDirectory(peer, job.relative!);
       } else if (job.kind == 'download') {
         await node!.downloadFile(peer, job.entry!, relative: job.relative, transferId: job.id, expectedDigest: job.digest);
+        job.skipped = node!.received.receipts[node!.received.key(peer.id, job.id)]?['skipped'] == true;
       } else {
         Future<SharedRead> open(int offset, int? length) async {
           if (job.sourceFolder != null) return backup!.sources.open(job.sourceFolder!, job.source!, offset: offset, length: length);
@@ -376,6 +378,7 @@ class BridgeController extends ChangeNotifier {
           onDigest: (digest) { job.digest = digest; unawaited(queue!.save()); });
         if (node!.lastUploadReceipt?['skipped'] == true && job.kind == 'backup') throw StateError('Получатель пропустил фото из-за совпадения имени');
         job.receipt = node!.lastUploadReceipt?['receipt'] as String?;
+        job.skipped = node!.lastUploadReceipt?['skipped'] == true;
       }
     } finally { timer.cancel(); update(); }
   }

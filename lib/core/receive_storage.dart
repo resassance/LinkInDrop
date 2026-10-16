@@ -15,7 +15,7 @@ class InsufficientSpace implements Exception {
 Future<int?> freeBytes(String path) async {
   if (Platform.isAndroid) return const MethodChannel('nearbridge/system').invokeMethod<int>('freeBytes', {'path': path});
   final result = Platform.isWindows
-    ? await Process.run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '(Get-Item -LiteralPath $env:NB_STORAGE_PATH).PSDrive.Free'], environment: {'NB_STORAGE_PATH': path})
+    ? await Process.run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', r'(Get-Item -LiteralPath $env:NB_STORAGE_PATH).PSDrive.Free'], environment: {'NB_STORAGE_PATH': path})
     : await Process.run('df', ['-Pk', path]);
   if (result.exitCode != 0) return null;
   if (Platform.isWindows) return int.tryParse('${result.stdout}'.trim());
@@ -36,6 +36,7 @@ class ReceiveStorage {
   String? destination;
   String conflict = 'rename';
   final Map<String, Map<String, dynamic>> receipts = {};
+  final Map<String, String> _verifiedVersions = {};
   Future<void> _saving = Future.value();
   Future<void> _delivering = Future.value();
   final channel = const MethodChannel('nearbridge/system');
@@ -56,13 +57,23 @@ class ReceiveStorage {
       final file = await readable(peer, token);
       final stat = await file.stat();
       if (offset > stat.size) throw const FileSystemException('Source changed');
+      final version = contentVersion(stat.size, stat.modified);
+      if (_verifiedVersions[token] != version) {
+        if ((await sha256.bind(file.openRead()).first).toString() != item['sha256']) throw const FileSystemException('Backup copy was changed');
+        _verifiedVersions[token] = version;
+      }
       final end = length == null || offset + length > stat.size ? stat.size : offset + length;
       return SharedRead(stat.size, file.openRead(offset, end), () async {}, version: contentVersion(stat.size, stat.modified));
     }
     final value = await channel.invokeMapMethod<String, dynamic>('openReceived', {'location': location, 'offset': offset, 'length': length});
     final reader = value!['reader'] as String;
+    final version = value['version'] as String?;
     var closed = false;
     Future<void> close() async { if (!closed) { closed = true; await channel.invokeMethod<void>('closeFolderFile', {'reader': reader}); } }
+    if (version == null || version.startsWith('0:') || _verifiedVersions[token] != version) {
+      if (!await verify(peer, token, item['sha256'] as String)) { await close(); throw const FileSystemException('Backup copy was changed'); }
+      if (version != null) _verifiedVersions[token] = version;
+    }
     Stream<List<int>> stream() async* {
       try {
         while (!closed) {
