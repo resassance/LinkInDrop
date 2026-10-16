@@ -133,7 +133,7 @@ class ReceiveStorage {
           skipped = true;
           location = target.path;
         } else if (conflict == 'rename') {
-          final base = p.withoutExtension(relativeName), ext = p.extension(relativeName);
+          final base = p.posix.withoutExtension(relativeName), ext = p.posix.extension(relativeName);
           var n = 1;
           do { relativeName = '$base ($n)$ext'; n++; target = File(p.joinAll([root, ...relativeName.split('/')])); }
           while (await FileSystemEntity.type(target.path, followLinks: false) != FileSystemEntityType.notFound);
