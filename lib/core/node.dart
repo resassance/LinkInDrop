@@ -65,6 +65,7 @@ class BridgeNode {
   DateTime? _inviteExpiry;
   bool _pairing = false;
   bool _checking = false;
+  bool _stopping = false;
   bool receivingEnabled = true;
   bool clipboardReceivingEnabled = true;
   double? transferProgress;
@@ -82,6 +83,7 @@ class BridgeNode {
   Directory get inbox => Directory(p.join(directory.path, 'inbox'));
 
   Future<void> start({String? destination, String conflictPolicy = "rename", bool sortReceived = false}) async {
+    _stopping = false;
     identity = await Identity.load(directory);
     await inbox.create(recursive: true);
     sharedFiles = SharedFiles(directory, documents: folderProvider);
@@ -108,6 +110,13 @@ class BridgeNode {
       ? int.tryParse(await portFile.readAsString()) : null;
     final listenPort = preferredPort != 0 && savedPort != null &&
       savedPort >= 1 && savedPort <= 65535 ? savedPort : preferredPort;
+    await _listen(listenPort);
+    if (discoveryEnabled) await _startDiscovery();
+    _healthTimer = Timer.periodic(const Duration(seconds: 5), (_) => unawaited(checkPeers()));
+    onChanged();
+  }
+
+  Future<void> _listen(int listenPort) async {
     try {
       _server = await HttpServer.bindSecure(InternetAddress.anyIPv4,
         listenPort, identity.context);
@@ -116,15 +125,15 @@ class BridgeNode {
       onActivity(Activity('Порт подключения изменён',
         'Порт $listenPort занят. Используется $port. Создайте новый QR и обновите правило Windows Firewall.', error: true));
     }
-    if (preferredPort != 0) await portFile.writeAsString('$port', flush: true);
+    if (preferredPort != 0) await File(p.join(directory.path, 'listen-port')).writeAsString('$port', flush: true);
     _server!.idleTimeout = const Duration(seconds: 30);
     _server!.listen((request) => unawaited(_handle(request)), onError: (Object error) {
       onActivity(Activity('Ошибка соединения', '$error', error: true));
     });
-    if (discoveryEnabled) await _startDiscovery();
-    _healthTimer = Timer.periodic(const Duration(seconds: 5), (_) => unawaited(checkPeers()));
-    onChanged();
   }
+
+  bool get hasActiveTransfers => transferName != null || _activeTransfers.isNotEmpty || _downloads > 0;
+  Future<void> _networkChanges = Future.value();
 
   List<String> preferredAddresses = [];
 
@@ -135,10 +144,23 @@ class BridgeNode {
       .where(isConnectionHost).toSet().toList();
   }
 
-  Future<void> networkChanged(List<String> preferred) async {
+  Future<void> networkChanged(List<String> preferred) {
+    return _networkChanges = _networkChanges.catchError((Object _) {}).then((_) => _changeNetwork(preferred));
+  }
+
+  Future<void> _changeNetwork(List<String> preferred) async {
+    if (_server == null || _stopping) return;
     preferredAddresses = preferred;
     for (final client in _clients.toList()) { client.close(force: true); }
     for (final dialer in _dialers.values.toList()) { dialer.close(); }
+    final listenPort = port;
+    await _server?.close(force: true);
+    if (_stopping) return;
+    await _listen(listenPort);
+    _discoveryTimer?.cancel();
+    _discovery?.close();
+    _discovery = null;
+    if (discoveryEnabled) await _startDiscovery();
     _localAddresses = await addresses();
     if (relayUrl != null) await configureRelay(relayUrl);
     _announce();
@@ -1285,6 +1307,8 @@ class BridgeNode {
   }
 
   Future<void> stop() async {
+    _stopping = true;
+    await _networkChanges.catchError((Object _) {});
     await relayHost?.close();
     relayHost = null;
     for (final dialer in _dialers.values.toList()) { dialer.close(); }
