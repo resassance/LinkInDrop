@@ -36,7 +36,7 @@ class LocalNetwork(context: Context, private val changed: () -> Unit) {
     }
     private fun apply() {
         val next = if (enabled) wifi() else null
-        if (next == selected && (next == null || ConnectivityManager.getBoundNetworkForProcess() == next)) return
+        if (next == selected && (next == null || manager.boundNetworkForProcess == next)) return
         try {
             if (!manager.bindProcessToNetwork(next)) { failure = "Android не разрешил прямой маршрут. Проверьте настройки NekoBox и запрет соединений без VPN."; return }
             selected = next
@@ -49,7 +49,7 @@ class LocalNetwork(context: Context, private val changed: () -> Unit) {
     fun status(): Map<String, Any?> {
         val physical = wifi()
         val vpn = manager.allNetworks.any { manager.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true }
-        val active = ConnectivityManager.getBoundNetworkForProcess()
+        val active = manager.boundNetworkForProcess
         val addresses = if (enabled && selected != null && active == selected) manager.getLinkProperties(selected!!)?.linkAddresses?.map { it.address }?.filter { it is java.net.Inet4Address && !it.isLoopbackAddress }?.map { it.hostAddress } ?: emptyList() else emptyList()
         return mapOf("enabled" to enabled, "vpn" to vpn, "wifi" to (physical != null),
             "direct" to (enabled && selected != null && active == selected), "addresses" to addresses, "error" to failure)
