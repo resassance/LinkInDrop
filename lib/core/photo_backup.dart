@@ -109,7 +109,7 @@ class PhotoBackup {
             var digest = entry.version == null || entry.version!.startsWith('0:') ? null : _versions[fingerprint];
             if (digest == null) {
               final source = await sources.open(root.id, entry.relativePath!);
-              try { digest = (await sha256.bind(source.stream).first).toString(); }
+              try { digest = (await sha256.bind(source.stream.takeWhile((_) => !stopped())).first).toString(); }
               finally { await source.close(); }
               if (stopped()) return;
               _versions[fingerprint] = digest;

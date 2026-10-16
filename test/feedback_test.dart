@@ -13,6 +13,8 @@ import 'package:nearbridge/core/shared_folders.dart';
 import 'package:nearbridge/core/transfer_queue.dart';
 import 'package:nearbridge/ui/app.dart';
 
+class _RealHttp extends HttpOverrides {}
+
 class _Controller extends BridgeController {
   @override
   bool get isAndroid => true;
@@ -108,6 +110,7 @@ void main() {
   });
 
   test('desktop browses Android document trees and persistent individual document grants over TLS', () async {
+    await HttpOverrides.runWithHttpOverrides(() async {
     final root = await Directory.systemTemp.createTemp('nearbridge-android-browse-');
     const channel = MethodChannel('nearbridge/system');
     final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -156,6 +159,7 @@ void main() {
       expect(revoked, isTrue);
       expect(await phone.sharedFiles.list(), isEmpty);
     } finally { await phone.stop(); await desktop.stop(); messenger.setMockMethodCallHandler(channel, null); await root.delete(recursive: true); }
+    }, _RealHttp());
   }, timeout: const Timeout(Duration(minutes: 2)));
 
   testWidgets('scroll extent stays stable and compact layouts fit populated controls', (tester) async {
@@ -187,7 +191,7 @@ void main() {
       await tester.pump();
       expect(scroll.pixels, closeTo(offset, 0.1));
       expect(scroll.maxScrollExtent, closeTo(extent, 0.1));
-      expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Файлы устройства')).onPressed, isNotNull);
+      expect(tester.widget<OutlinedButton>(find.ancestor(of: find.text('Файлы устройства'), matching: find.byWidgetPredicate((widget) => widget is OutlinedButton))).onPressed, isNotNull);
       controller.backup!.enabled = true; controller.changed();
       await tester.pump();
       final toggle = tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, 'Автоматически копировать новые фото'));
