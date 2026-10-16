@@ -26,6 +26,19 @@ void main() {
     expect(page.entries.single.relativePath, 'nested/hello.txt');
   });
 
+  test('removing a shared root keeps the same document tree available as a receive destination', () async {
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(channel, (call) async { calls.add(call); return null; });
+    const uri = 'content://test/tree/shared-and-received';
+    await provider.retain(uri);
+    await provider.retain(uri);
+    await provider.revoke(uri);
+    expect(calls, isEmpty);
+    await provider.revoke(uri);
+    expect(calls.single.method, 'revokeFolder');
+    expect((calls.single.arguments as Map)['uri'], uri);
+  });
+
   test('Android document readers close after completion and stream cancellation', () async {
     for (final cancel in [false, true]) {
       var reads = 0;

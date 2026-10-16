@@ -54,16 +54,22 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
             return true
         }
         if (call.method !in setOf("checkFolder", "revokeFolder", "listFolder", "openFolderFile",
-                "readFolderFile", "closeFolderFile", "openReceived")) return false
+                "readFolderFile", "closeFolderFile", "openReceived", "releaseFolderWrite")) return false
         worker.execute {
             try {
                 val value: Any? = when (call.method) {
                     "checkFolder" -> { root(call.argument<String>("uri")!!); null }
                     "revokeFolder" -> {
                         val uri = Uri.parse(call.argument<String>("uri")!!)
-                        if (resolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }) {
-                            resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
+                        val grant = resolver.persistedUriPermissions.firstOrNull { it.uri == uri }
+                        val flags = (if (grant?.isReadPermission == true) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+                            (if (grant?.isWritePermission == true) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
+                        if (flags != 0) resolver.releasePersistableUriPermission(uri, flags)
+                        null
+                    }
+                    "releaseFolderWrite" -> {
+                        val uri = Uri.parse(call.argument<String>("uri")!!)
+                        if (resolver.persistedUriPermissions.any { it.uri == uri && it.isWritePermission }) resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                         null
                     }
                     "listFolder" -> list(call.argument<String>("uri")!!,
