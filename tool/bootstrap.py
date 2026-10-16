@@ -22,15 +22,20 @@ shutil.copyfile(assets / "tile_icon.xml", drawable / "tile_icon.xml")
 gradle = root / "android" / "app" / "build.gradle.kts"
 if gradle.exists():
     value = gradle.read_text(encoding="utf-8")
+    if "import java.util.Properties" not in value:
+        value = "import java.util.Properties\n\n" + value
     value = value.replace("minSdk = flutter.minSdkVersion", "minSdk = 23")
     value = value.replace("ndkVersion = flutter.ndkVersion", 'ndkVersion = "27.0.12077973"')
     value = value.replace('signingConfig = signingConfigs.getByName("debug")', '\n'.join([
-        'if (System.getenv("NB_ANDROID_STORE_PASSWORD") != null) {',
+        'if (file("nearbridge-signing.properties").exists()) {',
         'signingConfig = signingConfigs.create("nearbridgeRelease") {',
+        'val credentials = Properties().apply {',
+        'file("nearbridge-signing.properties").inputStream().use { load(it) }',
+        '}',
         'storeFile = file("nearbridge-release.p12")',
-        'storePassword = System.getenv("NB_ANDROID_STORE_PASSWORD")',
+        'storePassword = credentials.getProperty("storePassword")',
         'keyAlias = "nearbridge"',
-        'keyPassword = System.getenv("NB_ANDROID_STORE_PASSWORD")',
+        'keyPassword = credentials.getProperty("storePassword")',
         '}',
         '} else { signingConfig = signingConfigs.getByName("debug") }',
     ]))

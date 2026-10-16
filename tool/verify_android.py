@@ -9,8 +9,9 @@ tools = sorted((sdk / "build-tools").glob("*/apksigner"), key=lambda path: [int(
 if not tools:
     raise RuntimeError("apksigner is not installed")
 result = subprocess.run([str(tools[-1]), "verify", "--print-certs", str(root / "build/app/outputs/flutter-apk/app-release.apk")], check=True, text=True, capture_output=True)
-match = re.search(r"Signer #1 certificate SHA-256 digest: ([a-fA-F0-9]+)", result.stdout)
+fingerprints = {value.lower() for value in re.findall(r"certificate SHA-256 digest:\s*([a-fA-F0-9]+)", result.stdout)}
 expected = (root / "platform_assets/android/release-certificate.sha256").read_text().strip()
-if match is None or match.group(1).lower() != expected:
+print("APK signer certificate fingerprints: " + ", ".join(sorted(fingerprints)))
+if fingerprints != {expected}:
     raise RuntimeError("APK is not signed by the permanent Nearbridge release certificate")
 print("Verified permanent Nearbridge Android signing certificate")
