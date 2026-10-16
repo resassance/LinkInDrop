@@ -109,7 +109,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     await showDialog<void>(context: context, builder: (context) => StatefulBuilder(
       builder: (context, setDialogState) {
         final code = node.invite(host).encode();
-        return AlertDialog(title: const Text('Добавить устройство'),
+        return AlertDialog(scrollable: true, title: const Text('Добавить устройство'),
           content: SizedBox(width: 340, child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(padding: const EdgeInsets.all(12), color: Colors.white,
               child: QrImageView(data: code, size: 250, backgroundColor: Colors.white)),
@@ -201,18 +201,19 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     await showDialog<void>(context: context, builder: (context) => StatefulBuilder(
       builder: (context, setDialogState) => AlertDialog(
         title: const Text('Мои файлы и папки'),
-        content: SizedBox(width: 460, height: 320, child: Column(children: [
+        content: SizedBox(width: 460, height: 320, child: ListView(children: [
           Text(c.shareFiles ? 'Доступ включён. Привязанные устройства видят выбранные файлы и папки.' : 'Доступ выключен. Включите его ниже или добавьте файлы и папки.'),
           if (!c.shareFiles) TextButton(onPressed: () async { await c.setSettings(fileSharing: true); if (context.mounted) setDialogState(() {}); }, child: const Text('Включить доступ')),
           const Text('На телефоне выберите папку системным диалогом и подтвердите «Использовать эту папку». Для повторного доступа разрешение сохраняется.'),
           const SizedBox(height: 12),
-          Expanded(child: ListView(children: [
+
             if (entries.isEmpty) const Text('Файлы и папки пока не выбраны'),
             for (final entry in entries) ListTile(
               leading: Icon(entry.isDirectory ? Icons.folder_outlined : Icons.insert_drive_file_outlined),
-              title: Text(entry.name),
-              subtitle: Text(entry.isDirectory ? 'Папка со всем содержимым' : _fileSize(entry.size)),
-              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              title: Text(entry.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(entry.isDirectory ? 'Папка со всем содержимым' : _fileSize(entry.size)),
+                Wrap(children: [
                 IconButton(tooltip: 'Кому доступно и срок', icon: const Icon(Icons.manage_accounts_outlined),
                   onPressed: () => _shareAccess(entry)),
                 IconButton(tooltip: 'Закрыть доступ', icon: const Icon(Icons.remove_circle_outline),
@@ -221,8 +222,8 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
                     ? node.sharedFolders.remove(entry.id) : node.sharedFiles.remove(entry.id));
                   final updated = await ownEntries();
                   if (context.mounted) setDialogState(() => entries = updated);
-                })])),
-          ])),
+                })]),
+              ])),
         ])),
         actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть')),
           FilledButton.icon(icon: const Icon(Icons.add), label: const Text('Добавить файлы'),
@@ -320,7 +321,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   Future<void> _relaySettings() async {
     final text = TextEditingController(text: c.relayAddress ?? '');
     final saved = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
-      title: const Text('Подключение через интернет'),
+      scrollable: true, title: const Text('Подключение через интернет'),
       content: SizedBox(width: 430, child: Column(mainAxisSize: MainAxisSize.min, children: [
         const Text('Укажите адрес сервера Nearbridge. Код подключения передаст его второму устройству. VPN не нужен; содержимое защищено соединением с проверкой сертификата устройства.'),
         const SizedBox(height: 14), TextField(controller: text,

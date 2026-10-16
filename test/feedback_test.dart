@@ -10,6 +10,7 @@ import 'package:nearbridge/core/models.dart';
 import 'package:nearbridge/core/node.dart';
 import 'package:nearbridge/core/photo_backup.dart';
 import 'package:nearbridge/core/shared_folders.dart';
+import 'package:nearbridge/core/shared_files.dart';
 import 'package:nearbridge/core/transfer_queue.dart';
 import 'package:nearbridge/ui/app.dart';
 
@@ -166,6 +167,8 @@ void main() {
     final controller = _Controller()..loading = false;
     final node = BridgeNode(directory: Directory('/tmp/unused'), name: 'Test', onPairRequest: (_) async => false,
       onClipboard: (_) async {}, onActivity: (_) {}, onChanged: () {});
+    node.sharedFiles = SharedFiles(node.directory);
+    node.sharedFolders = SharedFolders(node.directory);
     controller.node = node;
     node.peers['peer'] = Peer(id: 'peer', name: 'Очень длинное имя телефона и компьютера', host: '127.0.0.1', port: 1,
       fingerprint: '', incomingToken: '', outgoingToken: '')..online = true;
@@ -199,6 +202,17 @@ void main() {
       controller.backup!.enabled = false;
       expect(tester.takeException(), isNull, reason: 'width $width');
       controller.busy = false;
+      if (width == 320) {
+        controller.changed();
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Мои файлы и папки'));
+        await tester.tap(find.text('Мои файлы и папки'));
+        await tester.pumpAndSettle();
+        expect(find.text('Включить доступ'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text('Закрыть'));
+        await tester.pumpAndSettle();
+      }
     }
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
