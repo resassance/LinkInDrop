@@ -9,7 +9,7 @@ Copy text or an image on one computer, paste it on another. Pair your phone once
 Download a build from [Releases](https://github.com/resassance/nearbridge/releases).
 
 - Windows: extract the entire ZIP and run `nearbridge.exe`.
-- Linux: extract the archive and run `nearbridge/nearbridge`. Requires GTK 3 and a compatible desktop session.
+- Linux: extract the archive and run `nearbridge/nearbridge`. Requires GTK 3, the Ayatana AppIndicator runtime (`libayatana-appindicator3-1` on Debian/Ubuntu) and a compatible desktop session.
 - Android: install the APK. Android 6 or newer. Alpha APKs use a development signing key; replacing a build may require uninstalling it and pairing again.
 
 Keep the app running. Use one local network or a private VPN connecting both devices; guest Wi-Fi may prevent devices from connecting. On Windows, choose **Разрешить локальные подключения** and approve the Windows administrator prompt. This adds app-specific inbound rules limited to the local subnet, without changing the firewall or network profile globally. Default ports: TCP 45831, UDP 45832. The actual listening port is shown below the QR and saved across restarts; if it changes because it is occupied, update the firewall rule.
