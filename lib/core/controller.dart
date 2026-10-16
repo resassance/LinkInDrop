@@ -69,7 +69,7 @@ class BridgeController extends ChangeNotifier {
     for (final peer in peers) {
       if (peer.id == selectedPeerId) return peer;
     }
-    return null;
+    return peers.length == 1 ? peers.single : null;
   }
 
   void changed() => notifyListeners();

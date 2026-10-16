@@ -254,17 +254,34 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   }
 
   Future<void> _browseFiles({Peer? target, SharedFile? initial}) async {
-    final peer = target ?? c.selectedPeer;
+    var peer = target ?? c.selectedPeer;
     final node = c.node;
-    if (peer == null || node == null) return;
+    if (node == null) return;
+    if (peer == null && c.peers.isNotEmpty) {
+      peer = await showDialog<Peer>(context: context, builder: (context) => SimpleDialog(
+        title: const Text('Файлы какого устройства открыть?'),
+        children: c.peers.map((device) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, device),
+          child: Text('${device.name}${device.online ? '' : ' · не в сети'}'))).toList()));
+      if (peer != null) c.selectPeer(peer.id);
+    }
+    if (!mounted) return;
+    if (peer == null) {
+      if (c.peers.isEmpty) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сначала добавьте устройство по QR или коду подключения')));
+      return;
+    }
+    final device = peer;
     final chosen = await showDialog<SharedFile>(context: context, builder: (context) => RemoteFilesDialog(
-      deviceName: peer.name, canDownload: c.receiveFiles, initialFolder: initial,
-      isFavorite: (folder) => c.isFavorite(peer.id, folder),
-      toggleFavorite: (folder) => c.toggleFavorite(peer.id, folder),
-      load: (folder, offset) => node.browseFiles(peer, folder: folder, offset: offset),
-      search: (folder, query, cursor) => node.searchFiles(peer, query, folder: folder, cursor: cursor),
-      preview: (entry) => node.previewFile(peer, entry)));
-    if (chosen != null) await c.run(() => c.enqueueDownload(peer, chosen));
+      deviceName: device.name, canDownload: c.receiveFiles, initialFolder: initial,
+      isFavorite: (folder) => c.isFavorite(device.id, folder),
+      toggleFavorite: (folder) => c.toggleFavorite(device.id, folder),
+      load: (folder, offset) => node.browseFiles(device, folder: folder, offset: offset),
+      search: (folder, query, cursor) => node.searchFiles(device, query, folder: folder, cursor: cursor),
+      preview: (entry) => node.previewFile(device, entry)));
+    if (chosen != null) {
+      try { await c.enqueueDownload(device, chosen); }
+      catch (error) { c.record(Activity('Не получилось скачать', '$error', error: true)); }
+    }
   }
 
   String _remaining(int seconds) => seconds < 60 ? '$seconds с' : seconds < 3600 ? '${seconds ~/ 60} мин' : '${seconds ~/ 3600} ч ${(seconds % 3600) ~/ 60} мин';
@@ -551,11 +568,13 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         title: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text('${peer.online ? 'Подключено' : 'Не в сети'}${peer.activeRelay ? ' · интернет' : ''}', style: const TextStyle(color: subdued)),
         trailing: PopupMenuButton<String>(onSelected: (value) {
+          if (value == 'files') unawaited(_browseFiles(target: peer));
           if (value == 'forget') unawaited(_forget(peer));
           if (value == 'clipboard') unawaited(c.setPeerClipboard(peer, !peer.clipboardEnabled));
           if (value == 'address') unawaited(_remoteAddress(peer));
           if (value == 'incoming') unawaited(c.setIncomingFiles(peer, !peer.incomingFilesEnabled));
         }, itemBuilder: (_) => [
+          const PopupMenuItem(value: 'files', child: Text('Открыть файлы устройства')),
           PopupMenuItem(value: 'clipboard', child: Text(peer.clipboardEnabled ? 'Отключить общий буфер' : 'Включить общий буфер')),
           PopupMenuItem(value: 'incoming', child: Text(peer.incomingFilesEnabled ? 'Запретить приём файлов' : 'Разрешить приём файлов')),
           const PopupMenuItem(value: 'address', child: Text('Локальный / удалённый адрес')),
@@ -603,7 +622,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     Wrap(spacing: 8, runSpacing: 8, children: [
       FilledButton.icon(onPressed: c.busy || c.selectedPeer == null ? null : _sendFiles,
         icon: const Icon(Icons.attach_file_rounded), label: const Text('Выбрать файлы')),
-      OutlinedButton.icon(onPressed: c.busy || c.selectedPeer == null ? null : _browseFiles,
+      OutlinedButton.icon(onPressed: c.node == null ? null : _browseFiles,
         icon: const Icon(Icons.folder_open_rounded), label: const Text('Файлы устройства')),
       TextButton(onPressed: c.busy ? null : _manageSharedFiles, child: const Text('Мои файлы и папки')),
     ]),

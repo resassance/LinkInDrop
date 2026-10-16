@@ -23,8 +23,11 @@ class AndroidFolders implements FolderProvider {
     (await channel.invokeListMethod<String>('pickSharedFiles')) ?? [];
 
   @override
-  Future<Map<String, dynamic>> statDocument(String location) async =>
-    (await _translate(() => channel.invokeMapMethod<String, dynamic>('statSharedDocument', {'uri': location})))!;
+  Future<Map<String, dynamic>> statDocument(String location) async {
+    final value = await _translate<Map<String, dynamic>?>(() => channel.invokeMapMethod<String, dynamic>('statSharedDocument', {'uri': location}));
+    if (value == null) throw const FileSystemException('Файл недоступен');
+    return value;
+  }
 
   @override
   Future<SharedRead> openDocument(String location, {int offset = 0, int? length}) =>

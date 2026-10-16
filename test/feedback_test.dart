@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -166,7 +165,9 @@ void main() {
     controller.node = node;
     node.peers['peer'] = Peer(id: 'peer', name: 'Очень длинное имя телефона и компьютера', host: '127.0.0.1', port: 1,
       fingerprint: '', incomingToken: '', outgoingToken: '')..online = true;
-    controller.selectedPeerId = 'peer';
+    expect(controller.selectedPeer?.id, 'peer');
+    controller.selectedPeerId = 'deleted-device';
+    expect(controller.selectedPeer?.id, 'peer');
     controller.queue = TransferQueue(directory: Directory('/tmp/unused'), execute: (_, __) async {}, interrupt: () {}, completed: (_) async {}, discard: (_) async {});
     controller.queue!.jobs.addAll(List.generate(3, (index) => TransferJob(id: '$index', peerId: 'peer', kind: 'upload',
       name: 'Очень длинное имя файла номер $index.jpg', state: index == 0 ? 'running' : 'waiting', totalBytes: 1000000)));
@@ -186,6 +187,12 @@ void main() {
       await tester.pump();
       expect(scroll.pixels, closeTo(offset, 0.1));
       expect(scroll.maxScrollExtent, closeTo(extent, 0.1));
+      expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Файлы устройства')).onPressed, isNotNull);
+      controller.backup!.enabled = true; controller.changed();
+      await tester.pump();
+      final toggle = tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, 'Автоматически копировать новые фото'));
+      expect(toggle.onChanged, isNotNull);
+      controller.backup!.enabled = false;
       expect(tester.takeException(), isNull, reason: 'width $width');
       controller.busy = false;
     }
