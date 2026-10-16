@@ -11,12 +11,18 @@ import 'transfer_queue.dart';
 
 class PhotoBackup {
   PhotoBackup({required this.directory, required this.sources, required this.enqueue,
-    required this.available, required this.changed});
+    required this.available, required this.changed, this.verifyCopy});
   final Directory directory;
   final SharedFolders sources;
   final Future<void> Function(List<TransferJob>) enqueue;
   final bool Function(String peerId) available;
   final void Function() changed;
+  final Future<bool> Function(String peer, String receipt, String digest)? verifyCopy;
+  final Map<String, Map<String, dynamic>> copies = {};
+  bool verifying = false;
+  int verified = 0;
+  int missing = 0;
+  DateTime? lastVerified;
   bool enabled = false;
   String? peerId;
   bool scanning = false;
@@ -28,6 +34,8 @@ class PhotoBackup {
   final Set<String> _queued = {};
   Timer? _timer;
   Future<void>? _running;
+  Future<void>? _verification;
+  bool _closed = false;
   Future<void> _saving = Future.value();
 
   Future<void> load(List<TransferJob> jobs) async {
@@ -40,8 +48,9 @@ class PhotoBackup {
       _versions.addAll((value['versions'] as Map? ?? {}).cast<String, String>());
       _receipts.addAll((value['receipts'] as List? ?? []).cast<String>());
       copied = value['copied'] as int? ?? 0;
+      for (final entry in ((value['copies'] as Map?) ?? {}).entries) { copies[entry.key as String] = (entry.value as Map).cast<String, dynamic>(); }
     }
-    for (final job in jobs.where((j) => j.kind == 'backup' && j.state != 'cancelled')) {
+    for (final job in jobs.where((j) => j.kind == 'backup' && j.state != 'cancelled' && j.state != 'completed')) {
       if (job.digest != null) _queued.add('${job.peerId}:${job.digest}');
     }
     _timer = Timer.periodic(const Duration(minutes: 1), (_) => unawaited(scan()));
@@ -50,7 +59,7 @@ class PhotoBackup {
 
   Future<void> save() {
     final content = jsonEncode({'enabled': enabled, 'peer': peerId, 'versions': _versions,
-      'receipts': _receipts.toList(), 'copied': copied});
+      'receipts': _receipts.toList(), 'copied': copied, 'copies': copies});
     _saving = _saving.catchError((Object _) {}).then((_) async {
       final file = File(p.join(directory.path, 'photo-backup.json.new'));
       await file.writeAsString(content, flush: true);
@@ -66,7 +75,7 @@ class PhotoBackup {
 
   Future<void> _scan() async {
     final peer = peerId;
-    if (!enabled || scanning || peer == null || !available(peer)) return;
+    if (_closed || !enabled || scanning || verifying || peer == null || !available(peer)) return;
     scanning = true;
     lastError = null;
     changed();
@@ -97,7 +106,7 @@ class PhotoBackup {
             final date = entry.modifiedAt != null && entry.modifiedAt!.millisecondsSinceEpoch > 0 ? entry.modifiedAt! : DateTime.now();
             final relative = 'Photos/${date.year}/${date.month.toString().padLeft(2, '0')}/${digest.substring(0, 12)}_${entry.name}';
             batch.add(TransferJob(id: randomToken(16), peerId: peer, kind: 'backup',
-              name: entry.name, source: entry.relativePath, sourceFolder: root.id, relative: relative, digest: digest));
+              name: entry.name, totalBytes: entry.size, source: entry.relativePath, sourceFolder: root.id, relative: relative, digest: digest));
           }
         }
       }
@@ -115,13 +124,37 @@ class PhotoBackup {
     if (job.kind != 'backup' || job.digest == null) return;
     final key = '${job.peerId}:${job.digest}';
     if (_receipts.add(key)) copied++;
+    if (job.receipt != null) copies[key] = {...job.toJson(), 'valid': true};
     _queued.remove(key);
     await save();
     changed();
   }
 
+  Future<void> verify() {
+    if (verifying) return _verification ?? Future.value();
+    return _verification = _verify();
+  }
+
+  Future<void> _verify() async {
+    final peer = peerId;
+    if (_closed || verifying || scanning || peer == null || !available(peer) || verifyCopy == null) return;
+    verifying = true; verified = 0; missing = 0; lastError = null; changed();
+    try {
+      for (final entry in copies.entries.where((entry) => entry.value['peer'] == peer).toList()) {
+        if (_closed) break;
+        final item = entry.value;
+        final valid = await verifyCopy!(peer, item['receipt'] as String, item['digest'] as String);
+        item['valid'] = valid; item['verifiedAt'] = DateTime.now().millisecondsSinceEpoch;
+        if (valid) { verified++; } else { missing++; _receipts.remove(entry.key); _queued.remove(entry.key); }
+        changed();
+      }
+      lastVerified = DateTime.now(); await save();
+    } catch (error) { lastError = '$error'; }
+    finally { verifying = false; changed(); }
+  }
+
   void cancelled(TransferJob job) {
     if (job.digest != null) _queued.remove('${job.peerId}:${job.digest}');
   }
-  Future<void> close() async { enabled = false; _timer?.cancel(); await _running; await _saving; }
+  Future<void> close() async { _closed = true; enabled = false; _timer?.cancel(); await _running; await _verification; await _saving; }
 }

@@ -15,6 +15,8 @@ import 'transfer_protocol.dart';
 import 'relay_transport.dart';
 import 'search_service.dart';
 import 'file_preview.dart';
+import 'receive_storage.dart';
+import 'release_info.dart';
 import 'package:crypto/crypto.dart';
 
 class BridgeNode {
@@ -44,6 +46,14 @@ class BridgeNode {
   late SharedFolders sharedFolders;
   late AccessRules access;
   late UploadStore uploads;
+  late ReceiveStorage received;
+  int transferBytes = 0;
+  int sessionBytes = 0;
+  int transferTotal = 0;
+  int bytesPerSecond = 0;
+  Stopwatch _rateClock = Stopwatch();
+  int _pacedBytes = 0;
+  Map<String, dynamic>? lastUploadReceipt;
   final SearchService searchService = SearchService();
   bool fileSharingEnabled = false;
   int _downloads = 0;
@@ -71,7 +81,7 @@ class BridgeNode {
   bool get running => _server != null;
   Directory get inbox => Directory(p.join(directory.path, 'inbox'));
 
-  Future<void> start() async {
+  Future<void> start({String? destination, String conflictPolicy = "rename"}) async {
     identity = await Identity.load(directory);
     await inbox.create(recursive: true);
     sharedFiles = SharedFiles(directory);
@@ -81,6 +91,9 @@ class BridgeNode {
     access = AccessRules(directory);
     await access.load();
     uploads = UploadStore(directory, inbox);
+    received = ReceiveStorage(directory, inbox);
+    await received.load();
+    received.destination = destination; received.conflict = conflictPolicy;
     _localAddresses = await addresses();
     final state = File(p.join(directory.path, 'peers.json'));
     if (await state.exists()) {
@@ -326,7 +339,8 @@ class BridgeNode {
         try {
           await _connectPeer(peer);
           peer.online = true;
-        } catch (_) {
+        } catch (error) {
+          peer.connectionFailure = error is HandshakeException ? 'certificate' : error is TimeoutException ? 'timeout' : error is RemoteFailure ? 'authorization' : 'unreachable';
           peer.online = false;
         }
       }));
@@ -352,14 +366,17 @@ class BridgeNode {
       if (!running || peers[peer.id] != peer) throw StateError('Устройство отключено');
       try {
         final route = await _firstSuccess(candidates.map((route) => () async {
+          final watch = Stopwatch()..start();
           final result = await _jsonRequest(host: route.$1 == '@relay' ? '127.0.0.1' : route.$1, port: route.$2,
             direct: route.$1 != '@relay', relay: route.$1 == '@relay', relayAddress: peer.relayUrl, room: peer.relayRoom,
             fingerprint: peer.fingerprint, endpoint: '/ping', token: peer.outgoingToken,
             timeout: Duration(seconds: route.$1 == '@relay' ? 12 : 4));
           if (result['id'] != peer.id) throw const FormatException('Device identity mismatch');
-          return (route, connectionHosts(result['hosts']));
+          return (route, connectionHosts(result['hosts']), watch.elapsedMilliseconds);
         }));
         if (peers[peer.id] != peer || !running) throw StateError('Устройство отключено');
+        peer.latencyMs = route.$3;
+        peer.connectionFailure = null;
         peer.activeRelay = route.$1.$1 == '@relay';
         peer.activeHost = peer.activeRelay ? '127.0.0.1' : route.$1.$1;
         peer.activePort = route.$1.$2;
@@ -386,7 +403,7 @@ class BridgeNode {
         return await _jsonRequest(host: peer.connectionHost, port: peer.connectionPort,
           fingerprint: peer.fingerprint, endpoint: endpoint,
           token: peer.outgoingToken, body: body, query: query,
-          timeout: endpoint.endsWith('/complete') ? const Duration(minutes: 2) : const Duration(seconds: 15));
+          timeout: endpoint.endsWith('/complete') || endpoint.startsWith('/receipts/') ? const Duration(hours: 1) : const Duration(seconds: 15));
       } on SocketException {
         if (attempt != 0) rethrow;
       } on TimeoutException {
@@ -417,7 +434,7 @@ class BridgeNode {
     if (transferName != null) throw StateError('Дождитесь текущей передачи');
     final file = File(path);
     final length = await file.length();
-    if (length > maxFileBytes) throw StateError('Лимит файла — 2 ГБ');
+    if (length > maxFileBytes) throw StateError('Лимит файла — 8 ТБ');
     final name = safeFilename(filename ?? p.basename(path));
     final client = _client(peer.fingerprint);
     _outgoingTransfer = client;
@@ -525,12 +542,12 @@ class BridgeNode {
     });
   }
 
-  Future<void> downloadFile(Peer peer, SharedFile entry, {String? relative, String? transferId}) async {
+  Future<void> downloadFile(Peer peer, SharedFile entry, {String? relative, String? transferId, String? expectedDigest}) async {
     final id = transferId ?? randomToken(16);
     _transferCancelled = false;
     for (var attempt = 0; ; attempt++) {
       try {
-        await _downloadFile(peer, entry, id, relative);
+        await _downloadFile(peer, entry, id, relative, expectedDigest);
         return;
       } on SocketException {
         if (attempt != 0 || _transferCancelled) rethrow;
@@ -546,19 +563,43 @@ class BridgeNode {
     }
   }
 
-  Future<void> _downloadFile(Peer peer, SharedFile entry, String id, String? relative) async {
+  void _beginRate(int total) {
+    transferBytes = 0; sessionBytes = 0; transferTotal = total; _pacedBytes = 0; _rateClock = Stopwatch()..start();
+  }
+
+  Future<void> _pace(int count) async {
+    if (_transferCancelled) throw const TransferStopped();
+    _pacedBytes += count;
+    while (bytesPerSecond > 0 && _rateClock.elapsedMilliseconds < _pacedBytes * 1000 / bytesPerSecond) {
+      if (_transferCancelled) throw const TransferStopped();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+  }
+
+  String diagnosticReport() => jsonEncode({'app': 'Nearbridge', 'version': appVersion,
+    'platform': Platform.operatingSystem, 'listening': running,
+    'relayConfigured': relayUrl != null, 'relayOnline': relayHost?.online == true,
+    'peers': peers.values.map((peer) => {'online': peer.online,
+      'route': peer.activeRelay ? 'relay' : 'direct', 'latencyMs': peer.latencyMs,
+      'failure': peer.connectionFailure}).toList()});
+
+  Future<bool> verifyReceipt(Peer peer, String token, String digest) async =>
+    (await _pairedRequest(peer, '/receipts/$token/verify', body: {'sha256': digest}))['valid'] == true;
+
+  Future<void> _downloadFile(Peer peer, SharedFile entry, String id, String? relative, String? expectedDigest) async {
     if (!receivingEnabled) throw StateError('Включите приём файлов');
     if (transferName != null) throw StateError('Дождитесь текущей передачи');
     if (!RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(id)) throw const FormatException('Invalid transfer ID');
     SharedFile.fromJson(entry.toJson());
     if (entry.isDirectory) throw StateError('Выберите файл внутри папки');
+    _beginRate(entry.size);
     final state = await Directory(p.join(directory.path, 'partial')).create(recursive: true);
     final part = File(p.join(state.path, '$id.part'));
     final metaFile = File(p.join(state.path, '$id.json'));
     final Map<String, dynamic> meta = await metaFile.exists()
       ? jsonDecode(await metaFile.readAsString()) as Map<String, dynamic> : {
         'peer': peer.id, 'resource': jsonEncode(entry.toJson()),
-        'relative': relative ?? '${randomToken(8)}_${safeFilename(entry.name)}', 'offset': 0,
+        'relative': '${randomToken(8)}_${safeFilename(entry.name)}', 'offset': 0,
       };
     if (meta['peer'] != peer.id || meta['resource'] != jsonEncode(entry.toJson())) {
       throw const FormatException('Transfer source changed');
@@ -569,18 +610,27 @@ class BridgeNode {
       await next.rename(metaFile.path);
     }
     final output = File(p.joinAll([inbox.path, ...portablePath(meta['relative'] as String).split('/')]));
-    if (meta['done'] == true && await output.exists()) return;
+    if (received.receipts.containsKey(received.key(peer.id, id))) return;
+    Future<void> deliverCompleted() async {
+      final digest = meta['digest'] as String;
+      if (expectedDigest != null && digest != expectedDigest) throw const FormatException('Backup checksum mismatch');
+      final receipt = await received.deliver(peer.id, id, output, relative ?? entry.name, digest);
+      onActivity(Activity(receipt['skipped'] == true ? 'Файл пропущен' : 'Файл получен', '${entry.name} · ${peer.name}', path: receipt['location'] as String));
+    }
+    if (meta['done'] == true && await output.exists()) { await deliverCompleted(); return; }
     if (meta['finalizing'] == true && await output.exists()) {
       if ((await sha256.bind(output.openRead()).first).toString() != meta['digest']) {
         throw const FileSystemException('Completed download was changed');
       }
       meta['done'] = true;
       await save();
+      await deliverCompleted();
       return;
     }
     if (!await part.exists()) await part.writeAsBytes([]);
     var offset = meta['offset'] as int? ?? 0;
     final existing = await part.length();
+    await requireSpace(inbox.path, entry.size * 2 > existing ? entry.size * 2 - existing : 0);
     if (existing < offset) offset = (existing ~/ transferBlockBytes) * transferBlockBytes;
     final handle = await part.open(mode: FileMode.append);
     await handle.truncate(offset);
@@ -597,7 +647,7 @@ class BridgeNode {
         client ??= _client(peer.fingerprint);
         _outgoingTransfer = client;
         final request = await client.getUrl(Uri(scheme: 'https', host: peer.connectionHost,
-          port: peer.connectionPort, path: entry.folderId == null ? '/files/${entry.id}' : '/browse/file',
+          port: peer.connectionPort, path: entry.id.startsWith('receipt:') ? '/receipts/${entry.id.substring(8)}/file' : entry.folderId == null ? '/files/${entry.id}' : '/browse/file',
           queryParameters: entry.folderId == null ? null : {'folder': entry.folderId!, 'path': entry.relativePath!}))
           .timeout(const Duration(seconds: 15));
         request.followRedirects = false;
@@ -629,7 +679,8 @@ class BridgeNode {
               if (_transferCancelled) throw const TransferStopped();
               offset += chunk.length;
               if (offset > total) throw const FormatException('Invalid file length');
-              transferProgress = total == 0 ? 1 : offset / total;
+              transferBytes = offset; transferTotal = total;
+        transferProgress = total == 0 ? 1 : offset / total;
               onChanged();
               return chunk;
             }));
@@ -651,7 +702,7 @@ class BridgeNode {
         if (total > maxFileBytes || end < offset || end >= total || end - offset + 1 > transferBlockBytes) {
           throw const FormatException('Invalid range length');
         }
-        final bytes = await _readBounded(response, transferBlockBytes);
+        final bytes = await _readTransferBlock(response, offset, total);
         if (bytes.length != end - offset + 1 || !secureEquals(
             sha256.convert(bytes).toString(), response.headers.value('X-Nearbridge-SHA256') ?? '')) {
           throw const FormatException('Block checksum mismatch');
@@ -663,12 +714,14 @@ class BridgeNode {
         meta['offset'] = offset;
         meta['etag'] = etag;
         await save();
+        transferBytes = offset; transferTotal = total;
         transferProgress = offset / total;
         onChanged();
         if (offset == total) break;
       }
       if (_transferCancelled) throw const TransferStopped();
       meta['digest'] = (await sha256.bind(part.openRead()).first).toString();
+      if (expectedDigest != null && meta['digest'] != expectedDigest) throw const FormatException('Backup checksum mismatch');
       meta['finalizing'] = true;
       await save();
       final destination = await inboxDestination(inbox, meta['relative'] as String);
@@ -676,7 +729,8 @@ class BridgeNode {
       meta['done'] = true;
       meta.remove('finalizing');
       await save();
-      onActivity(Activity('Файл получен', '${entry.name} · ${peer.name}', path: destination.path));
+      final receipt = await received.deliver(peer.id, id, destination, relative ?? entry.name, meta['digest'] as String);
+      onActivity(Activity(receipt['skipped'] == true ? 'Файл пропущен' : 'Файл получен', '${entry.name} · ${peer.name}', path: receipt['location'] as String));
     } finally {
       client?.close(force: true);
       if (client != null) _clients.remove(client);
@@ -717,8 +771,10 @@ class BridgeNode {
       late String digest;
       final version = original.version;
       final total = original.size;
+      _beginRate(total);
+      lastUploadReceipt = null;
       try {
-        if (total < 0 || total > maxFileBytes) throw StateError('Лимит файла — 2 ГБ');
+        if (total < 0 || total > maxFileBytes) throw StateError('Лимит файла — 8 ТБ');
         digest = (await sha256.bind(original.stream.map((chunk) {
           if (_transferCancelled) throw const TransferStopped();
           return chunk;
@@ -726,6 +782,7 @@ class BridgeNode {
       } finally { await original.close(); }
       if (expectedDigest != null && expectedDigest != digest) throw StateError('Исходный файл изменился. Добавьте его заново.');
       onDigest?.call(digest);
+      _rateClock.reset();
       var status = await _pairedRequest(peer, '/uploads', body: {'id': id, 'name': filename,
         'size': total, 'sha256': digest, if (relative != null) 'relative': relative});
       var offset = status['offset'] as int;
@@ -752,7 +809,14 @@ class BridgeNode {
           request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
           request.headers.set('X-Nearbridge-SHA256', sha256.convert(bytes).toString());
           request.contentLength = bytes.length;
-          request.add(bytes);
+          await request.addStream(() async* {
+            for (var start = 0; start < bytes.length; start += 65536) {
+              final end = start + 65536 < bytes.length ? start + 65536 : bytes.length;
+              await _pace(end - start);
+              yield bytes.sublist(start, end);
+              sessionBytes += end - start; transferBytes = offset + end; onChanged();
+            }
+          }());
           final response = await request.close().timeout(const Duration(seconds: 45));
           final result = jsonDecode(utf8.decode(await _readBounded(response, 65536))) as Map<String, dynamic>;
           if (response.statusCode != 200) throw RemoteFailure(response.statusCode, result['error'] as String? ?? 'Upload failed');
@@ -761,15 +825,27 @@ class BridgeNode {
           offset = next;
         } finally { client.close(force: true); _clients.remove(client);
       _dialers.remove(client)?.close(); _outgoingTransfer = null; }
+        transferBytes = offset; transferTotal = total;
         transferProgress = total == 0 ? 1 : offset / total;
         onChanged();
       }
       if (_transferCancelled) throw const TransferStopped();
       status = await _pairedRequest(peer, '/uploads/$id/complete', body: {});
+      lastUploadReceipt = status;
       if (status['sha256'] != digest) throw const FormatException('Upload checksum mismatch');
-      onActivity(Activity('Файл отправлен', '$filename → ${peer.name}'));
+      onActivity(Activity(status['skipped'] == true ? 'Файл пропущен получателем' : 'Файл отправлен', '$filename → ${peer.name}'));
       return digest;
     } finally { transferName = null; transferProgress = null; onChanged(); }
+  }
+
+  Future<Uint8List> _readTransferBlock(Stream<List<int>> stream, int offset, int total) async {
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in stream.timeout(const Duration(seconds: 30))) {
+      if (builder.length + chunk.length > transferBlockBytes) throw const FormatException('Payload is too large');
+      await _pace(chunk.length);
+      builder.add(chunk); sessionBytes += chunk.length; transferBytes = offset + builder.length; transferTotal = total; onChanged();
+    }
+    return builder.takeBytes();
   }
 
   static Future<Uint8List> _readBounded(Stream<List<int>> stream, int limit) async {
@@ -801,6 +877,17 @@ class BridgeNode {
         return;
       }
       peer.online = true;
+      if (request.uri.path.startsWith('/receipts/')) {
+        final parts = request.uri.pathSegments;
+        if (parts.length != 3 || !RegExp(r'^[a-f0-9]{64}$').hasMatch(parts[1])) throw const FormatException('Invalid receipt');
+        if (request.method == 'POST' && parts[2] == 'verify') {
+          final body = jsonDecode(utf8.decode(await _readBounded(request, 4096))) as Map<String, dynamic>;
+          _respond(request, 200, {'valid': await received.verify(peer.id, parts[1], body['sha256'] as String)});
+        } else if (request.method == 'GET' && parts[2] == 'file') {
+          await _serveSource(request, peer, 'backup', (offset, length) => received.open(peer.id, parts[1], offset, length));
+        } else { _respond(request, 404, {'error': 'Not found'}); }
+        return;
+      }
       if (request.method == 'POST' && request.uri.path.startsWith('/uploads')) {
         await _acceptUpload(request, peer);
         return;
@@ -848,6 +935,8 @@ class BridgeNode {
         default:
           _respond(request, 404, {'error': 'Not found'});
       }
+    } on InsufficientSpace {
+      _respond(request, 507, {'error': 'Недостаточно свободного места у получателя'});
     } on FileSystemException {
       _respond(request, 404, {'error': 'Папка или файл недоступны. Обновите список.'});
     } on FormatException {
@@ -988,11 +1077,12 @@ class BridgeNode {
     if (parts.length == 2 && parts[1] == 'mkdir') {
       final body = jsonDecode(utf8.decode(await _readBounded(request, 8192))) as Map<String, dynamic>;
       if (body['relative'] is! String) throw const FormatException('Missing directory');
-      await inboxDirectory(inbox, body['relative'] as String);
+      await received.createDirectory(body['relative'] as String);
       result = {'ok': true};
     } else if (parts.length == 1 && parts[0] == 'uploads') {
       final body = jsonDecode(utf8.decode(await _readBounded(request, 16384))) as Map<String, dynamic>;
       result = await uploads.start(peer.id, body);
+      if (result['done'] != true) await requireSpace(inbox.path, (body['size'] as int) * 2 - (result['offset'] as int));
     } else if (parts.length == 3 && parts[2] == 'block') {
       final offset = int.tryParse(request.uri.queryParameters['offset'] ?? '');
       if (offset == null) throw const FormatException('Missing offset');
@@ -1002,7 +1092,16 @@ class BridgeNode {
       await _readBounded(request, 8192);
       result = await uploads.complete(peer.id, parts[1]);
       final path = result.remove('path') as String?;
-      if (path != null) onActivity(Activity('Файл получен', '${p.basename(path)} · ${peer.name}', path: path));
+      final token = received.key(peer.id, parts[1]);
+      var receipt = received.receipts[token];
+      if (receipt == null) {
+        final completed = path == null ? await uploads.completedFile(peer.id, parts[1]) : File(path);
+        final metadata = await uploads.metadata(peer.id, parts[1]);
+        receipt = await received.deliver(peer.id, parts[1], completed, metadata['relative'] as String? ?? metadata['name'] as String, result['sha256'] as String);
+        onActivity(Activity(receipt['skipped'] == true ? 'Файл пропущен' : 'Файл получен', '${receipt['name']} · ${peer.name}', path: receipt['location'] as String));
+      }
+      result['receipt'] = token;
+      result['skipped'] = receipt['skipped'];
     } else if (parts.length == 3 && parts[2] == 'cancel') {
       await _readBounded(request, 8192);
       await uploads.cancel(peer.id, parts[1]);
@@ -1095,6 +1194,7 @@ class BridgeNode {
     final temporary = File(p.join(inbox.path, '.$id.part'));
     final output = File(p.join(inbox.path, '${id}_$name'));
     _activeTransfers.add(id);
+    await requireSpace(inbox.path, size * 2);
     final sink = temporary.openWrite();
     var received = 0;
     try {
@@ -1107,7 +1207,9 @@ class BridgeNode {
       await sink.close();
       if (received != size) throw const FormatException('Incomplete file');
       await temporary.rename(output.path);
-      onActivity(Activity('Файл получен', '$name · ${peer.name}', path: output.path));
+      final digest = (await sha256.bind(output.openRead()).first).toString();
+      final receipt = await this.received.deliver(peer.id, id, output, name, digest);
+      onActivity(Activity(receipt['skipped'] == true ? 'Файл пропущен' : 'Файл получен', '$name · ${peer.name}', path: receipt['location'] as String));
       _respond(request, 200, {'ok': true, 'bytes': received});
     } catch (_) {
       try { await sink.close(); } catch (_) {}

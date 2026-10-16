@@ -65,8 +65,18 @@ jobs:
         run: flutter build linux --release
       - if: matrix.platform == 'windows'
         run: flutter build windows --release
-      - if: matrix.platform == 'android'
+      - name: Prepare permanent Android signing
+        if: matrix.platform == 'android'
+        env:
+          NB_ANDROID_KEYSTORE: ${{ secrets.NB_ANDROID_KEYSTORE }}
+          NB_ANDROID_STORE_PASSWORD: ${{ secrets.NB_ANDROID_STORE_PASSWORD }}
+        run: python tool/sign_android.py
+      - name: Build signed Android APK
+        if: matrix.platform == 'android'
         run: flutter build apk --release --target-platform android-arm64,android-arm,android-x64
+      - name: Verify Android release certificate
+        if: matrix.platform == 'android'
+        run: python tool/verify_android.py
       - run: python tool/package.py ${{ matrix.platform }}
       - uses: actions/upload-artifact@v4
         with:

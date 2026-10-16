@@ -11,7 +11,7 @@ import 'connection_error.dart';
 class TransferJob {
   TransferJob({required this.id, required this.peerId, required this.kind,
     required this.name, this.source, this.entry, this.relative, this.sourceFolder,
-    this.state = 'waiting', this.error, this.digest});
+    this.state = 'waiting', this.error, this.digest, this.receipt, this.batchId, this.totalBytes = 0, this.priority = 0, this.skipped = false});
   final String id;
   final String peerId;
   final String kind;
@@ -23,19 +23,30 @@ class TransferJob {
   String state;
   String? error;
   String? digest;
+  String? receipt;
+  final String? batchId;
+  int totalBytes;
+  int priority;
+  bool skipped;
+  double bytesPerSecond = 0;
+  int get doneBytes => (totalBytes * progress).round();
+  int? get remainingSeconds => bytesPerSecond > 0 ? ((totalBytes - doneBytes) / bytesPerSecond).ceil() : null;
   double progress = 0;
   int attempts = 0;
   DateTime? nextAttempt;
   Map<String, dynamic> toJson() => {'id': id, 'peer': peerId, 'kind': kind,
     'name': name, 'source': source, 'entry': entry?.toJson(), 'relative': relative,
-    'sourceFolder': sourceFolder, 'state': state, 'error': error, 'digest': digest};
+    'sourceFolder': sourceFolder, 'state': state, 'error': error, 'digest': digest,
+    'receipt': receipt, 'batch': batchId, 'bytes': totalBytes, 'priority': priority, 'skipped': skipped};
   factory TransferJob.fromJson(Map<String, dynamic> value) => TransferJob(
     id: value['id'] as String, peerId: value['peer'] as String, kind: value['kind'] as String,
     name: value['name'] as String, source: value['source'] as String?,
     entry: value['entry'] == null ? null : SharedFile.fromJson(value['entry'] as Map<String, dynamic>),
     relative: value['relative'] as String?, sourceFolder: value['sourceFolder'] as String?,
     state: value['state'] == 'running' ? 'paused' : value['state'] as String,
-    error: value['error'] as String?, digest: value['digest'] as String?);
+    error: value['error'] as String?, digest: value['digest'] as String?,
+    receipt: value['receipt'] as String?, batchId: value['batch'] as String?,
+    totalBytes: value['bytes'] as int? ?? 0, priority: value['priority'] as int? ?? 0, skipped: value['skipped'] == true);
 }
 
 class TransferQueue extends ChangeNotifier {
@@ -92,7 +103,11 @@ class TransferQueue extends ChangeNotifier {
       while (!_stopped) {
         final waiting = jobs.where((j) => j.state == 'waiting' && (j.nextAttempt == null || !j.nextAttempt!.isAfter(DateTime.now())));
         if (waiting.isEmpty) break;
-        final job = waiting.first;
+        final ordered = waiting.toList()..sort((a, b) {
+          final priority = b.priority.compareTo(a.priority);
+          return priority == 0 ? jobs.indexOf(a).compareTo(jobs.indexOf(b)) : priority;
+        });
+        final job = ordered.first;
         active = job;
         job.state = 'running';
         job.error = null;
@@ -161,8 +176,22 @@ class TransferQueue extends ChangeNotifier {
     notifyListeners();
   }
 
+  double batchProgress(String batch) {
+    final items = jobs.where((job) => job.batchId == batch && job.state != 'cancelled');
+    final total = items.fold<int>(0, (sum, job) => sum + job.totalBytes);
+    if (total == 0) return items.isEmpty ? 0 : items.where((job) => job.state == 'completed').length / items.length;
+    return items.fold<int>(0, (sum, job) => sum + (job.state == 'completed' ? job.totalBytes : job.doneBytes)) / total;
+  }
+
+  Future<void> setPriority(TransferJob job, int priority) async {
+    final batch = job.batchId;
+    for (final item in jobs.where((item) => batch == null ? item == job : item.batchId == batch)) { item.priority = priority; }
+    await save(); notifyListeners();
+  }
+
   Future<void> clearFinished() async {
-    jobs.removeWhere((j) => j.state == 'completed' || j.state == 'cancelled');
+    final unfinished = jobs.where((j) => j.state != 'completed' && j.state != 'cancelled').map((j) => j.batchId).whereType<String>().toSet();
+    jobs.removeWhere((j) => (j.state == 'completed' || j.state == 'cancelled') && (j.batchId == null || !unfinished.contains(j.batchId)));
     await save();
     notifyListeners();
   }

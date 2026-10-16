@@ -14,7 +14,7 @@ target = root / "android" / "app" / "src" / "main"
 shutil.copyfile(assets / "AndroidManifest.xml", target / "AndroidManifest.xml")
 kotlin = target / "kotlin" / "dev" / "resassance" / "nearbridge"
 kotlin.mkdir(parents=True, exist_ok=True)
-for name in ["MainActivity.kt", "ConnectionService.kt", "ClipboardTile.kt", "FolderAccess.kt"]:
+for name in ["MainActivity.kt", "ConnectionService.kt", "ClipboardTile.kt", "FolderAccess.kt", "BridgeApplication.kt", "PlatformBridge.kt", "BootReceiver.kt", "ReceiveFiles.kt"]:
     shutil.copyfile(assets / name, kotlin / name)
 drawable = target / "res" / "drawable"
 drawable.mkdir(parents=True, exist_ok=True)
@@ -22,8 +22,23 @@ shutil.copyfile(assets / "tile_icon.xml", drawable / "tile_icon.xml")
 gradle = root / "android" / "app" / "build.gradle.kts"
 if gradle.exists():
     value = gradle.read_text(encoding="utf-8")
+    if "import java.util.Properties" not in value:
+        value = "import java.util.Properties\n\n" + value
     value = value.replace("minSdk = flutter.minSdkVersion", "minSdk = 23")
     value = value.replace("ndkVersion = flutter.ndkVersion", 'ndkVersion = "27.0.12077973"')
+    value = value.replace('signingConfig = signingConfigs.getByName("debug")', '\n'.join([
+        'if (file("nearbridge-signing.properties").exists()) {',
+        'signingConfig = signingConfigs.create("nearbridgeRelease") {',
+        'val credentials = Properties().apply {',
+        'file("nearbridge-signing.properties").inputStream().use { load(it) }',
+        '}',
+        'storeFile = file("nearbridge-release.p12")',
+        'storePassword = credentials.getProperty("storePassword")',
+        'keyAlias = "nearbridge"',
+        'keyPassword = credentials.getProperty("storePassword")',
+        '}',
+        '} else { signingConfig = signingConfigs.getByName("debug") }',
+    ]))
     gradle.write_text(value, encoding="utf-8")
 for folder in ["android", "windows", "linux"]:
     for file in (root / folder).rglob("*"):
