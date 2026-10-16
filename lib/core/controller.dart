@@ -110,6 +110,7 @@ class BridgeController extends ChangeNotifier {
         recentPeers.addAll((data['recentPeers'] as List? ?? []).cast<String>());
         favorites.addAll((data['favorites'] as List? ?? []).map((e) => (e as Map).cast<String, dynamic>()));
       }
+      if (isAndroid && receiveDestination?.startsWith('content://') == true) await const AndroidFolders().retain(receiveDestination!);
       node = BridgeNode(directory: directory!, name: deviceName,
         folderProvider: isAndroid ? const AndroidFolders() : null,
         onPairRequest: (name) async => await pairingApproval?.call(name) ?? false,
@@ -459,9 +460,16 @@ class BridgeController extends ChangeNotifier {
       try { await probe.writeAsString('', flush: true); } finally { if (await probe.exists()) await probe.delete(); }
       destination = root;
     }
+    final previous = receiveDestination;
+    if (isAndroid && destination != previous && destination?.startsWith('content://') == true) await const AndroidFolders().retain(destination!);
     receiveDestination = destination; conflictPolicy = policy;
     node!.received.destination = destination; node!.received.conflict = policy;
-    await _saveSettings(); notifyListeners();
+    await _saveSettings();
+    if (isAndroid && previous != destination && previous?.startsWith('content://') == true) {
+      await const AndroidFolders().revoke(previous!);
+      await platformChannel.invokeMethod<void>('releaseFolderWrite', {'uri': previous});
+    }
+    notifyListeners();
   }
 
   Future<void> setSpeedLimit(int bytes) async {
