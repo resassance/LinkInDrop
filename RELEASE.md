@@ -14,3 +14,4 @@ Update both devices for resumable uploads and the new browser. File sharing and 
 Android battery/process restrictions still affect background availability, and its document picker may restrict protected folders. Linux tray availability depends on the desktop. Desktop builds are unsigned and Android builds use a development signing key.
 
 Download the build for your platform and its SHA-256 file. Windows users must extract the complete ZIP.
+Linux requires GTK 3 and the Ayatana AppIndicator runtime (`libayatana-appindicator3-1` on Debian/Ubuntu).
