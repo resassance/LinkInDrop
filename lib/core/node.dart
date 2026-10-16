@@ -48,6 +48,7 @@ class BridgeNode {
   late UploadStore uploads;
   late ReceiveStorage received;
   int transferBytes = 0;
+  int sessionBytes = 0;
   int transferTotal = 0;
   int bytesPerSecond = 0;
   Stopwatch _rateClock = Stopwatch();
@@ -563,10 +564,11 @@ class BridgeNode {
   }
 
   void _beginRate(int total) {
-    transferBytes = 0; transferTotal = total; _pacedBytes = 0; _rateClock = Stopwatch()..start();
+    transferBytes = 0; sessionBytes = 0; transferTotal = total; _pacedBytes = 0; _rateClock = Stopwatch()..start();
   }
 
   Future<void> _pace(int count) async {
+    if (_transferCancelled) throw const TransferStopped();
     _pacedBytes += count;
     while (bytesPerSecond > 0 && _rateClock.elapsedMilliseconds < _pacedBytes * 1000 / bytesPerSecond) {
       if (_transferCancelled) throw const TransferStopped();
@@ -641,7 +643,6 @@ class BridgeNode {
       var resets = 0;
       while (true) {
         if (_transferCancelled) throw const TransferStopped();
-        await _pace(entry.size - offset < transferBlockBytes ? entry.size - offset : transferBlockBytes);
         await _connectPeer(peer);
         client ??= _client(peer.fingerprint);
         _outgoingTransfer = client;
@@ -701,7 +702,7 @@ class BridgeNode {
         if (total > maxFileBytes || end < offset || end >= total || end - offset + 1 > transferBlockBytes) {
           throw const FormatException('Invalid range length');
         }
-        final bytes = await _readBounded(response, transferBlockBytes);
+        final bytes = await _readTransferBlock(response, offset, total);
         if (bytes.length != end - offset + 1 || !secureEquals(
             sha256.convert(bytes).toString(), response.headers.value('X-Nearbridge-SHA256') ?? '')) {
           throw const FormatException('Block checksum mismatch');
@@ -781,6 +782,7 @@ class BridgeNode {
       } finally { await original.close(); }
       if (expectedDigest != null && expectedDigest != digest) throw StateError('Исходный файл изменился. Добавьте его заново.');
       onDigest?.call(digest);
+      _rateClock.reset();
       var status = await _pairedRequest(peer, '/uploads', body: {'id': id, 'name': filename,
         'size': total, 'sha256': digest, if (relative != null) 'relative': relative});
       var offset = status['offset'] as int;
@@ -796,7 +798,6 @@ class BridgeNode {
           bytes = await _readBounded(source.stream, transferBlockBytes);
         } finally { await source.close(); }
         if (bytes.isEmpty) throw const FormatException('Incomplete source');
-        await _pace(bytes.length);
         await _connectPeer(peer);
         final client = _client(peer.fingerprint);
         _outgoingTransfer = client;
@@ -808,7 +809,14 @@ class BridgeNode {
           request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
           request.headers.set('X-Nearbridge-SHA256', sha256.convert(bytes).toString());
           request.contentLength = bytes.length;
-          request.add(bytes);
+          await request.addStream(() async* {
+            for (var start = 0; start < bytes.length; start += 65536) {
+              final end = start + 65536 < bytes.length ? start + 65536 : bytes.length;
+              await _pace(end - start);
+              yield bytes.sublist(start, end);
+              sessionBytes += end - start; transferBytes = offset + end; onChanged();
+            }
+          }());
           final response = await request.close().timeout(const Duration(seconds: 45));
           final result = jsonDecode(utf8.decode(await _readBounded(response, 65536))) as Map<String, dynamic>;
           if (response.statusCode != 200) throw RemoteFailure(response.statusCode, result['error'] as String? ?? 'Upload failed');
@@ -825,9 +833,19 @@ class BridgeNode {
       status = await _pairedRequest(peer, '/uploads/$id/complete', body: {});
       lastUploadReceipt = status;
       if (status['sha256'] != digest) throw const FormatException('Upload checksum mismatch');
-      onActivity(Activity('Файл отправлен', '$filename → ${peer.name}'));
+      onActivity(Activity(status['skipped'] == true ? 'Файл пропущен получателем' : 'Файл отправлен', '$filename → ${peer.name}'));
       return digest;
     } finally { transferName = null; transferProgress = null; onChanged(); }
+  }
+
+  Future<Uint8List> _readTransferBlock(Stream<List<int>> stream, int offset, int total) async {
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in stream.timeout(const Duration(seconds: 30))) {
+      if (builder.length + chunk.length > transferBlockBytes) throw const FormatException('Payload is too large');
+      await _pace(chunk.length);
+      builder.add(chunk); sessionBytes += chunk.length; transferBytes = offset + builder.length; transferTotal = total; onChanged();
+    }
+    return builder.takeBytes();
   }
 
   static Future<Uint8List> _readBounded(Stream<List<int>> stream, int limit) async {

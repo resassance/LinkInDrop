@@ -34,6 +34,8 @@ class PhotoBackup {
   final Set<String> _queued = {};
   Timer? _timer;
   Future<void>? _running;
+  Future<void>? _verification;
+  bool _closed = false;
   Future<void> _saving = Future.value();
 
   Future<void> load(List<TransferJob> jobs) async {
@@ -73,7 +75,7 @@ class PhotoBackup {
 
   Future<void> _scan() async {
     final peer = peerId;
-    if (!enabled || scanning || peer == null || !available(peer)) return;
+    if (_closed || !enabled || scanning || verifying || peer == null || !available(peer)) return;
     scanning = true;
     lastError = null;
     changed();
@@ -128,12 +130,18 @@ class PhotoBackup {
     changed();
   }
 
-  Future<void> verify() async {
+  Future<void> verify() {
+    if (verifying) return _verification ?? Future.value();
+    return _verification = _verify();
+  }
+
+  Future<void> _verify() async {
     final peer = peerId;
-    if (verifying || scanning || peer == null || !available(peer) || verifyCopy == null) return;
+    if (_closed || verifying || scanning || peer == null || !available(peer) || verifyCopy == null) return;
     verifying = true; verified = 0; missing = 0; lastError = null; changed();
     try {
       for (final entry in copies.entries.where((entry) => entry.value['peer'] == peer).toList()) {
+        if (_closed) break;
         final item = entry.value;
         final valid = await verifyCopy!(peer, item['receipt'] as String, item['digest'] as String);
         item['valid'] = valid; item['verifiedAt'] = DateTime.now().millisecondsSinceEpoch;
@@ -148,5 +156,5 @@ class PhotoBackup {
   void cancelled(TransferJob job) {
     if (job.digest != null) _queued.remove('${job.peerId}:${job.digest}');
   }
-  Future<void> close() async { enabled = false; _timer?.cancel(); await _running; await _saving; }
+  Future<void> close() async { _closed = true; enabled = false; _timer?.cancel(); await _running; await _verification; await _saving; }
 }
