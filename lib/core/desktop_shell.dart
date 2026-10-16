@@ -50,6 +50,8 @@ class DesktopShell with TrayListener, WindowListener {
   @override
   void onTrayIconMouseDown() { unawaited(show()); }
   @override
+  void onTrayIconRightMouseDown() { unawaited(trayManager.popUpContextMenu()); }
+  @override
   void onTrayMenuItemClick(MenuItem item) {
     if (item.key == 'show') unawaited(show());
     if (item.key == 'quit') unawaited(quit());

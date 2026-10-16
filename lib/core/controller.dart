@@ -35,6 +35,9 @@ class BridgeController extends ChangeNotifier {
   String? relayAddress;
   String? receiveDestination;
   String conflictPolicy = "rename";
+  bool sortReceived = true;
+  bool androidDirectWifi = false;
+  Map<String, dynamic> localNetwork = {};
   int speedLimit = 0;
   bool androidBackground = true;
   bool androidBoot = false;
@@ -103,12 +106,17 @@ class BridgeController extends ChangeNotifier {
         relayAddress = data['relay'] as String?;
         receiveDestination = data['receiveDestination'] as String?;
         conflictPolicy = data['conflictPolicy'] as String? ?? 'rename';
+        sortReceived = data['sortReceived'] as bool? ?? true;
+        androidDirectWifi = data['androidDirectWifi'] == true;
         speedLimit = data['speedLimit'] as int? ?? 0;
         androidBackground = data['androidBackground'] as bool? ?? true;
         androidBoot = data['androidBoot'] as bool? ?? false;
         selectedPeerId = data['selectedPeer'] as String?;
         recentPeers.addAll((data['recentPeers'] as List? ?? []).cast<String>());
         favorites.addAll((data['favorites'] as List? ?? []).map((e) => (e as Map).cast<String, dynamic>()));
+      }
+      if (isAndroid) {
+        localNetwork = await platformChannel.invokeMapMethod<String, dynamic>('setDirectWifi', {'enabled': androidDirectWifi}) ?? {};
       }
       if (isAndroid && receiveDestination?.startsWith('content://') == true) await const AndroidFolders().retain(receiveDestination!);
       node = BridgeNode(directory: directory!, name: deviceName,
@@ -117,7 +125,8 @@ class BridgeController extends ChangeNotifier {
         onClipboard: _receiveClipboard, onActivity: record, onChanged: _nodeChanged);
       node!.clipboardReceivingEnabled = receiveClipboard; node!.receivingEnabled = receiveFiles; node!.fileSharingEnabled = shareFiles;
       node!.bytesPerSecond = speedLimit;
-      await node!.start(destination: receiveDestination, conflictPolicy: conflictPolicy);
+      node!.preferredAddresses = (localNetwork['addresses'] as List? ?? []).cast<String>();
+      await node!.start(destination: receiveDestination, conflictPolicy: conflictPolicy, sortReceived: sortReceived);
       if (relayAddress != null) unawaited(node!.configureRelay(relayAddress));
       queue = TransferQueue(directory: directory!, execute: _executeJob,
         interrupt: () => node?.cancelTransfer(), completed: (job) async { await backup?.completed(job); await _cleanShared(job); },
@@ -159,6 +168,7 @@ class BridgeController extends ChangeNotifier {
       if (isAndroid) {
         platformChannel.setMethodCallHandler((call) async {
           if (call.method == 'shared') await handleShared();
+          if (call.method == 'localNetworkChanged') await refreshLocalNetwork(reconnect: true);
         });
         await platformChannel.invokeMethod<void>('setBackgroundSettings', {'enabled': androidBackground, 'boot': androidBoot});
         await refreshBackground();
@@ -179,6 +189,7 @@ class BridgeController extends ChangeNotifier {
       'receiveClipboard': receiveClipboard, 'receiveFiles': receiveFiles,
       'shareFiles': shareFiles, 'closeToTray': closeToTray, 'relay': relayAddress,
       'receiveDestination': receiveDestination, 'conflictPolicy': conflictPolicy, 'speedLimit': speedLimit,
+      'sortReceived': sortReceived, 'androidDirectWifi': androidDirectWifi,
       'androidBackground': androidBackground, 'androidBoot': androidBoot, 'recentPeers': recentPeers,
       'selectedPeer': selectedPeerId, 'favorites': favorites,
     });
@@ -449,6 +460,42 @@ class BridgeController extends ChangeNotifier {
     }
     await queue!.addAll(jobs);
     record(Activity('Папка добавлена в очередь', '${entry.name} · ${jobs.length} файлов'));
+  }
+
+  Future<void> openReceivedFolder() async {
+    final current = node;
+    if (current == null) throw StateError('Папка получения ещё не готова');
+    if (isAndroid) {
+      await platformChannel.invokeMethod<void>('openReceivedFolder', {'tree': receiveDestination});
+      return;
+    }
+    final folder = receiveDestination ?? current.inbox.path;
+    await Directory(folder).create(recursive: true);
+    final result = Platform.isWindows ? await Process.run('explorer.exe', [folder]) : await Process.run('xdg-open', [folder]);
+    if (result.exitCode != 0 && !(Platform.isWindows && result.exitCode == 1)) throw StateError('Не удалось открыть папку получения');
+  }
+
+  Future<void> setSortReceived(bool enabled) async {
+    sortReceived = enabled;
+    node?.received.sortByType = enabled;
+    await _saveSettings();
+    notifyListeners();
+  }
+
+  Future<void> refreshLocalNetwork({bool reconnect = false}) async {
+    if (!isAndroid) return;
+    localNetwork = await platformChannel.invokeMapMethod<String, dynamic>('localNetworkStatus') ?? {};
+    if (reconnect) await node?.networkChanged((localNetwork['addresses'] as List? ?? []).cast<String>());
+    notifyListeners();
+  }
+
+  Future<void> setDirectWifi(bool enabled) async {
+    if (node?.transferName != null || queue?.active != null) throw StateError('Сначала приостановите текущую передачу');
+    localNetwork = await platformChannel.invokeMapMethod<String, dynamic>('setDirectWifi', {'enabled': enabled}) ?? {};
+    androidDirectWifi = enabled;
+    await _saveSettings();
+    await node?.networkChanged((localNetwork['addresses'] as List? ?? []).cast<String>());
+    notifyListeners();
   }
 
   Future<void> setReceiveStorage(String? destination, String policy) async {

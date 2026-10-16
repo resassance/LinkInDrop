@@ -81,7 +81,7 @@ class BridgeNode {
   bool get running => _server != null;
   Directory get inbox => Directory(p.join(directory.path, 'inbox'));
 
-  Future<void> start({String? destination, String conflictPolicy = "rename"}) async {
+  Future<void> start({String? destination, String conflictPolicy = "rename", bool sortReceived = false}) async {
     identity = await Identity.load(directory);
     await inbox.create(recursive: true);
     sharedFiles = SharedFiles(directory, documents: folderProvider);
@@ -93,7 +93,7 @@ class BridgeNode {
     uploads = UploadStore(directory, inbox);
     received = ReceiveStorage(directory, inbox);
     await received.load();
-    received.destination = destination; received.conflict = conflictPolicy;
+    received.destination = destination; received.conflict = conflictPolicy; received.sortByType = sortReceived;
     _localAddresses = await addresses();
     final state = File(p.join(directory.path, 'peers.json'));
     if (await state.exists()) {
@@ -126,11 +126,24 @@ class BridgeNode {
     onChanged();
   }
 
+  List<String> preferredAddresses = [];
+
   Future<List<String>> addresses() async {
     final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4,
       includeLoopback: false);
-    return interfaces.expand((i) => i.addresses).map((a) => a.address)
+    return [...preferredAddresses, ...interfaces.expand((i) => i.addresses).map((a) => a.address)]
       .where(isConnectionHost).toSet().toList();
+  }
+
+  Future<void> networkChanged(List<String> preferred) async {
+    preferredAddresses = preferred;
+    for (final client in _clients.toList()) { client.close(force: true); }
+    for (final dialer in _dialers.values.toList()) { dialer.close(); }
+    _localAddresses = await addresses();
+    if (relayUrl != null) await configureRelay(relayUrl);
+    _announce();
+    await checkPeers();
+    onChanged();
   }
 
   Future<void> configureRelay(String? address) async {

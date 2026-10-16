@@ -133,3 +133,13 @@ Enable «Передавать при выключенном экране», allo
 On the phone use «Мои файлы и папки» and the system picker to select files or a folder. Confirm «Использовать эту папку» for a tree. Adding content enables sharing; use the sharing switch to revoke all access temporarily. Individual files selected in older versions should be removed and reselected for persistent permissions.
 
 Turning photo backup off stops the scan and pauses its queued transfers. Turning it on resumes only automatically paused photo jobs. Copies already received and regular transfers are preserved.
+
+### Compact transfer workspace
+
+Use «Полученные файлы» to open the receive directory. On Android the built-in inbox appears as a read-only Nearbridge document-provider root; a selected external receive tree opens in the system file manager. On desktop the outlined drop zone accepts files and folders; if more than one device is paired, choose the recipient after dropping. Right-click the tray icon for Open or Quit.
+
+Loose incoming files are sorted by extension into Фото, Видео, Музыка, Документы, Архивы, Приложения or Другое. «Хранение и подключение» contains the sorting switch. Folder trees, backup layout and existing files are preserved.
+
+### NekoBox and local Wi-Fi
+
+Keep NekoBox enabled and allow LAN bypass, or exclude Nearbridge (dev.resassance.nearbridge) from VPN app routing. Nearbridge also offers «Nearbridge через Wi-Fi мимо VPN», an optional process-level physical-network binding. It is disabled by default and applies to all Nearbridge traffic, including relay connections and update checks; it does not alter other apps. Wi-Fi/Ethernet is preferred while present, with automatic return to the system route when unavailable. Android VPN lockdown and VPN bypass restrictions still apply. A successful route selection is not proof that the VPN permits the connection.

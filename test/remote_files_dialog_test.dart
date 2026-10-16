@@ -14,8 +14,12 @@ void main() {
         load: (_, __) async => SharedPage([folder]))), child: const Text('Open')))));
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Избранная папка'), findsOneWidget);
-    expect(find.byTooltip('Скачать папку'), findsOneWidget);
+    expect(tester.getSize(find.byKey(const ValueKey('remote-name:'))).width, greaterThanOrEqualTo(200));
+    expect(find.byType(Dialog), findsOneWidget);
+    await tester.tap(find.byTooltip('Действия: ${folder.name}'));
+    await tester.pumpAndSettle();
+    expect(find.text('В избранное'), findsOneWidget);
+    expect(find.text('Скачать папку'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.binding.setSurfaceSize(null);
@@ -52,7 +56,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Показать ещё'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Скачать'));
+    await tester.tap(find.byTooltip('Действия: hello.txt'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Скачать'));
     await tester.pumpAndSettle();
     expect(chosen?.relativePath, 'hello.txt');
     expect(calls, contains('Documents:200'));

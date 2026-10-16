@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'transfer_protocol.dart';
 import 'shared_folders.dart';
+import 'received_categories.dart';
 
 class InsufficientSpace implements Exception {
   const InsufficientSpace();
@@ -35,6 +36,7 @@ class ReceiveStorage {
   final Directory inbox;
   String? destination;
   String conflict = 'rename';
+  bool sortByType = false;
   final Map<String, Map<String, dynamic>> receipts = {};
   final Map<String, String> _verifiedVersions = {};
   Future<void> _saving = Future.value();
@@ -119,6 +121,7 @@ class ReceiveStorage {
   Future<Map<String, dynamic>> _deliver(String peer, String id, File source, String relative, String digest) async {
     final token = key(peer, id);
     if (receipts.containsKey(token)) return receipts[token]!;
+    relative = organizedReceivedPath(portablePath(relative), enabled: sortByType);
     if (await FileSystemEntity.type(source.path, followLinks: false) != FileSystemEntityType.file || await source.resolveSymbolicLinks() != source.path) throw const FileSystemException('Unsafe source');
     final size = await source.length();
     var location = source.path;

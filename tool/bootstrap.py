@@ -14,7 +14,7 @@ target = root / "android" / "app" / "src" / "main"
 shutil.copyfile(assets / "AndroidManifest.xml", target / "AndroidManifest.xml")
 kotlin = target / "kotlin" / "dev" / "resassance" / "nearbridge"
 kotlin.mkdir(parents=True, exist_ok=True)
-for name in ["MainActivity.kt", "ConnectionService.kt", "ClipboardTile.kt", "FolderAccess.kt", "BridgeApplication.kt", "PlatformBridge.kt", "BootReceiver.kt", "ReceiveFiles.kt"]:
+for name in ["MainActivity.kt", "ConnectionService.kt", "ClipboardTile.kt", "FolderAccess.kt", "BridgeApplication.kt", "PlatformBridge.kt", "BootReceiver.kt", "ReceiveFiles.kt", "LocalNetwork.kt", "ReceivedDocumentsProvider.kt"]:
     shutil.copyfile(assets / name, kotlin / name)
 drawable = target / "res" / "drawable"
 drawable.mkdir(parents=True, exist_ok=True)
