@@ -1,9 +1,10 @@
 package dev.resassance.nearbridge
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.webkit.MimeTypeMap
+import java.util.Locale
 import io.flutter.plugin.common.MethodCall
 import java.io.File
 import java.security.MessageDigest
@@ -71,7 +72,8 @@ class ReceiveFiles(private val context: Context) {
         val source = File(call.argument<String>("source")!!)
         val privateRoot = context.filesDir.canonicalFile
         if (!source.canonicalPath.startsWith(privateRoot.path + File.separator)) throw SecurityException("Invalid source")
-        val temporary = DocumentsContract.createDocument(resolver, parent, "application/octet-stream", ".nearbridge-${UUID.randomUUID()}") ?: throw IllegalArgumentException("Не удалось создать файл")
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase(Locale.ROOT)) ?: "application/octet-stream"
+        val temporary = DocumentsContract.createDocument(resolver, parent, mime, ".nearbridge-${UUID.randomUUID()}") ?: throw IllegalArgumentException("Не удалось создать файл")
         var oldBackup: Uri? = null
         try {
             resolver.openOutputStream(temporary, "wt")?.use { output -> source.inputStream().use { it.copyTo(output, 65536) } } ?: throw IllegalArgumentException("Нет разрешения на запись")

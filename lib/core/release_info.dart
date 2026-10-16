@@ -4,19 +4,24 @@ import 'package:flutter/services.dart';
 
 const appVersion = '0.3.0-alpha.1';
 
+final _versionPattern = RegExp(r'^v?([0-9]{1,9})\.([0-9]{1,9})\.([0-9]{1,9})(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$');
+
 int compareVersions(String a, String b) {
-  List<int> parts(String v) => RegExp(r'\d+').allMatches(v.replaceFirst(RegExp(r'^v'), '')).map((m) => int.parse(m[0]!)).toList();
-  final x = parts(a), y = parts(b);
-  for (var i = 0; i < 3; i++) {
-    final d = (i < x.length ? x[i] : 0).compareTo(i < y.length ? y[i] : 0);
+  final x = _versionPattern.firstMatch(a), y = _versionPattern.firstMatch(b);
+  if (x == null || y == null) return x == null ? (y == null ? 0 : -1) : 1;
+  for (var i = 1; i <= 3; i++) {
+    final d = int.parse(x[i]!).compareTo(int.parse(y[i]!));
     if (d != 0) return d;
   }
-  if (a.contains('-') != b.contains('-')) return a.contains('-') ? -1 : 1;
-  for (var i = 3; i < x.length || i < y.length; i++) {
-    final d = (i < x.length ? x[i] : 0).compareTo(i < y.length ? y[i] : 0);
+  final preX = x[4], preY = y[4];
+  if (preX == null || preY == null) return preX == null ? (preY == null ? 0 : 1) : -1;
+  final left = preX.split('.'), right = preY.split('.');
+  for (var i = 0; i < left.length && i < right.length; i++) {
+    final l = int.tryParse(left[i]), r = int.tryParse(right[i]);
+    final d = l != null && r != null ? l.compareTo(r) : l != null ? -1 : r != null ? 1 : left[i].compareTo(right[i]);
     if (d != 0) return d;
   }
-  return 0;
+  return left.length.compareTo(right.length);
 }
 
 Future<Map<String, String>?> checkRelease() async {
@@ -33,7 +38,7 @@ Future<Map<String, String>?> checkRelease() async {
         bytes.addAll(chunk);
         if (bytes.length > 2 * 1024 * 1024) throw const FormatException('Ответ сервера слишком большой');
       }
-      final releases = (jsonDecode(utf8.decode(bytes)) as List).whereType<Map>().where((r) => r['draft'] != true && r['tag_name'] is String).toList();
+      final releases = (jsonDecode(utf8.decode(bytes)) as List).whereType<Map>().where((r) => r['draft'] != true && r['tag_name'] is String && _versionPattern.hasMatch(r['tag_name'] as String)).toList();
       releases.sort((a, b) => compareVersions(b['tag_name'] as String, a['tag_name'] as String));
       if (releases.isEmpty || compareVersions(releases.first['tag_name'] as String, appVersion) <= 0) return null;
       final tag = releases.first['tag_name'] as String;
