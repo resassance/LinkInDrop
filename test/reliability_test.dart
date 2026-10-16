@@ -72,6 +72,25 @@ void main() {
     } finally { await root.delete(recursive: true); }
   });
 
+  test('a parent receive directory cannot expose private app data to incoming files', () async {
+    final root = await Directory.systemTemp.createTemp('nearbridge-private-receive-');
+    try {
+      final private = await Directory('${root.path}/private').create();
+      final inbox = await Directory('${private.path}/inbox').create();
+      final identity = await File('${private.path}/identity.key').writeAsString('private-key');
+      final source = await File('${inbox.path}/source').writeAsString('incoming');
+      final storage = ReceiveStorage(private, inbox);
+      storage.destination = root.path; storage.conflict = 'replace';
+      final digest = sha256.convert(utf8.encode('incoming')).toString();
+      await expectLater(storage.deliver('peer', 'blocked', source, 'private/identity.key', digest), throwsA(isA<FileSystemException>()));
+      expect(await identity.readAsString(), 'private-key');
+      await expectLater(storage.createDirectory('private/unwanted'), throwsA(isA<FileSystemException>()));
+      expect(await Directory('${private.path}/unwanted').exists(), isFalse);
+      await storage.deliver('peer', 'allowed', source, 'public/file.txt', digest);
+      expect(await File('${root.path}/public/file.txt').readAsString(), 'incoming');
+    } finally { await root.delete(recursive: true); }
+  });
+
   test('queue priorities apply to folder groups and survive serialization', () async {
     final root = await Directory.systemTemp.createTemp('nearbridge-priority-');
     final executions = <String>[];
