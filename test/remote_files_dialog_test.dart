@@ -4,6 +4,23 @@ import 'package:nearbridge/core/models.dart';
 import 'package:nearbridge/ui/remote_files_dialog.dart';
 
 void main() {
+  testWidgets('compact remote folder actions fit long names', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    final id = randomToken(16);
+    final folder = SharedFile(id: id, folderId: id, relativePath: '', name: 'Очень длинное имя общей папки на телефоне', size: 0, isDirectory: true);
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: (context) => TextButton(
+      onPressed: () => showDialog<void>(context: context, builder: (_) => RemoteFilesDialog(
+        deviceName: 'Телефон с длинным названием', canDownload: true, toggleFavorite: (_) async {},
+        load: (_, __) async => SharedPage([folder]))), child: const Text('Open')))));
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Избранная папка'), findsOneWidget);
+    expect(find.byTooltip('Скачать папку'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.binding.setSurfaceSize(null);
+  });
+
   testWidgets('folder navigation, back, pagination and file selection', (tester) async {
     final id = randomToken(16);
     final folder = SharedFile(id: id, folderId: id, relativePath: '', name: 'Documents',

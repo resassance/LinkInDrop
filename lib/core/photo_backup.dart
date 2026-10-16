@@ -36,6 +36,7 @@ class PhotoBackup {
   Future<void>? _running;
   Future<void>? _verification;
   bool _closed = false;
+  int _generation = 0;
   Future<void> _saving = Future.value();
 
   Future<void> load(List<TransferJob> jobs) async {
@@ -68,6 +69,13 @@ class PhotoBackup {
     return _saving;
   }
 
+  Future<void> setEnabled(bool value) async {
+    enabled = value;
+    _generation++;
+    changed();
+    await save();
+  }
+
   Future<void> scan() {
     if (scanning) return _running ?? Future.value();
     return _running = _scan();
@@ -75,6 +83,8 @@ class PhotoBackup {
 
   Future<void> _scan() async {
     final peer = peerId;
+    final generation = _generation;
+    bool stopped() => _closed || !enabled || generation != _generation || peer != peerId;
     if (_closed || !enabled || scanning || verifying || peer == null || !available(peer)) return;
     scanning = true;
     lastError = null;
@@ -83,14 +93,16 @@ class PhotoBackup {
       final batch = <TransferJob>[];
       final planned = <String>{};
       for (final root in sources.roots()) {
+        if (stopped()) return;
         final pending = <(String, int)>[('', 0)];
         var visited = 0;
-        while (pending.isNotEmpty && enabled) {
+        while (pending.isNotEmpty && !stopped()) {
           if (++visited > 100000) throw StateError('Слишком много папок для одной проверки');
           final next = pending.removeLast();
           final page = await sources.list(root.id, next.$1, offset: next.$2);
           if (page.nextOffset != null) pending.add((next.$1, page.nextOffset!));
           for (final entry in page.entries) {
+            if (stopped()) return;
             if (entry.isDirectory) { pending.add((entry.relativePath!, 0)); continue; }
             if (!RegExp(r'\.(jpe?g|png|heic|webp)$', caseSensitive: false).hasMatch(entry.name)) continue;
             final fingerprint = '${root.id}:${entry.relativePath}:${entry.version}:${entry.size}';
@@ -99,6 +111,7 @@ class PhotoBackup {
               final source = await sources.open(root.id, entry.relativePath!);
               try { digest = (await sha256.bind(source.stream).first).toString(); }
               finally { await source.close(); }
+              if (stopped()) return;
               _versions[fingerprint] = digest;
             }
             final receipt = '$peer:$digest';
@@ -110,6 +123,7 @@ class PhotoBackup {
           }
         }
       }
+      if (stopped()) return;
       if (batch.isNotEmpty) {
         _queued.addAll(planned);
         try { await enqueue(batch); } catch (_) { for (final job in batch) { _queued.remove('${job.peerId}:${job.digest}'); } rethrow; }

@@ -125,3 +125,11 @@ The build workflow runs analysis and tests before packaging all three targets. R
 
 MIT License. Copyright 2026 Александр Орлов.
 
+
+### Background transfers and Android file access
+
+Enable «Передавать при выключенном экране», allow unrestricted battery operation and notifications, and keep Nearbridge running on the computer (the tray is sufficient). The foreground service holds CPU and Wi-Fi locks while enabled, increasing battery use. Some Android vendors also require allowing autostart. Force-stop requires manually reopening Nearbridge.
+
+On the phone use «Мои файлы и папки» and the system picker to select files or a folder. Confirm «Использовать эту папку» for a tree. Adding content enables sharing; use the sharing switch to revoke all access temporarily. Individual files selected in older versions should be removed and reselected for persistent permissions.
+
+Turning photo backup off stops the scan and pauses its queued transfers. Turning it on resumes only automatically paused photo jobs. Copies already received and regular transfers are preserved.

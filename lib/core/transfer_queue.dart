@@ -11,7 +11,7 @@ import 'connection_error.dart';
 class TransferJob {
   TransferJob({required this.id, required this.peerId, required this.kind,
     required this.name, this.source, this.entry, this.relative, this.sourceFolder,
-    this.state = 'waiting', this.error, this.digest, this.receipt, this.batchId, this.totalBytes = 0, this.priority = 0, this.skipped = false});
+    this.state = 'waiting', this.error, this.digest, this.receipt, this.batchId, this.totalBytes = 0, this.priority = 0, this.skipped = false, this.backupPaused = false});
   final String id;
   final String peerId;
   final String kind;
@@ -28,6 +28,7 @@ class TransferJob {
   int totalBytes;
   int priority;
   bool skipped;
+  bool backupPaused;
   double bytesPerSecond = 0;
   int get doneBytes => (totalBytes * progress).round();
   int? get remainingSeconds => bytesPerSecond > 0 ? ((totalBytes - doneBytes) / bytesPerSecond).ceil() : null;
@@ -37,7 +38,7 @@ class TransferJob {
   Map<String, dynamic> toJson() => {'id': id, 'peer': peerId, 'kind': kind,
     'name': name, 'source': source, 'entry': entry?.toJson(), 'relative': relative,
     'sourceFolder': sourceFolder, 'state': state, 'error': error, 'digest': digest,
-    'receipt': receipt, 'batch': batchId, 'bytes': totalBytes, 'priority': priority, 'skipped': skipped};
+    'receipt': receipt, 'batch': batchId, 'bytes': totalBytes, 'priority': priority, 'skipped': skipped, 'backupPaused': backupPaused};
   factory TransferJob.fromJson(Map<String, dynamic> value) => TransferJob(
     id: value['id'] as String, peerId: value['peer'] as String, kind: value['kind'] as String,
     name: value['name'] as String, source: value['source'] as String?,
@@ -46,7 +47,7 @@ class TransferJob {
     state: value['state'] == 'running' ? 'paused' : value['state'] as String,
     error: value['error'] as String?, digest: value['digest'] as String?,
     receipt: value['receipt'] as String?, batchId: value['batch'] as String?,
-    totalBytes: value['bytes'] as int? ?? 0, priority: value['priority'] as int? ?? 0, skipped: value['skipped'] == true);
+    totalBytes: value['bytes'] as int? ?? 0, priority: value['priority'] as int? ?? 0, skipped: value['skipped'] == true, backupPaused: value['backupPaused'] == true);
 }
 
 class TransferQueue extends ChangeNotifier {
@@ -61,6 +62,7 @@ class TransferQueue extends ChangeNotifier {
   TransferJob? active;
   bool _pumping = false;
   bool _stopped = false;
+  bool _backupEnabled = true;
   Future<void> _saving = Future.value();
   Future<void>? _worker;
   Timer? _retry;
@@ -86,7 +88,10 @@ class TransferQueue extends ChangeNotifier {
 
   Future<void> addAll(Iterable<TransferJob> values) async {
     if (jobs.length + values.length > 20000) throw StateError('В очереди слишком много файлов');
-    jobs.addAll(values);
+    for (final job in values) {
+      if (job.kind == 'backup' && !_backupEnabled && job.state == 'waiting') { job.backupPaused = true; job.state = 'paused'; }
+      jobs.add(job);
+    }
     await save();
     notifyListeners();
     start();
@@ -101,7 +106,7 @@ class TransferQueue extends ChangeNotifier {
     _pumping = true;
     try {
       while (!_stopped) {
-        final waiting = jobs.where((j) => j.state == 'waiting' && (j.nextAttempt == null || !j.nextAttempt!.isAfter(DateTime.now())));
+        final waiting = jobs.where((j) => j.state == 'waiting' && (j.kind != 'backup' || _backupEnabled) && (j.nextAttempt == null || !j.nextAttempt!.isAfter(DateTime.now())));
         if (waiting.isEmpty) break;
         final ordered = waiting.toList()..sort((a, b) {
           final priority = b.priority.compareTo(a.priority);
@@ -131,6 +136,7 @@ class TransferQueue extends ChangeNotifier {
           }
         } finally {
           active = null;
+          if (_backupEnabled && job.backupPaused && job.state == 'paused') { job.state = 'waiting'; job.backupPaused = false; }
           if (job.state == 'cancelled') await discard(job);
           await save();
           notifyListeners();
@@ -148,8 +154,26 @@ class TransferQueue extends ChangeNotifier {
     }
   }
 
+  Future<void> setBackupEnabled(bool enabled) async {
+    _backupEnabled = enabled;
+    for (final job in jobs.where((job) => job.kind == 'backup')) {
+      if (!enabled && (job.state == 'running' || job.state == 'waiting')) {
+        job.backupPaused = true;
+        job.state = 'paused';
+        if (active == job) interrupt();
+      } else if (enabled && job.backupPaused && job.state == 'paused' && active != job) {
+        job.backupPaused = false;
+        job.state = 'waiting';
+      }
+    }
+    notifyListeners();
+    await save();
+    if (enabled) start();
+  }
+
   Future<void> pause(TransferJob job) async {
     if (job.state == 'completed' || job.state == 'cancelled') return;
+    job.backupPaused = false;
     job.state = 'paused';
     if (active == job) interrupt();
     await save();
@@ -159,6 +183,8 @@ class TransferQueue extends ChangeNotifier {
   Future<void> resume(TransferJob job) async {
     if (job.state == 'completed' || job.state == 'cancelled') return;
     if (active == job) return;
+    if (job.kind == 'backup' && !_backupEnabled) return;
+    job.backupPaused = false;
     job.state = 'waiting';
     job.error = null;
     job.nextAttempt = null;

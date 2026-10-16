@@ -53,7 +53,13 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
                             "batteryUnrestricted" to power.isIgnoringBatteryOptimizations(context.packageName),
                             "notifications" to (Build.VERSION.SDK_INT < 24 || manager.areNotificationsEnabled())))
                     }
-                    "batterySettings" -> { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); result.success(null) }
+                    "batterySettings" -> {
+                        val power = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                        val intent = if (!power.isIgnoringBatteryOptimizations(context.packageName)) Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}")) else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                        try { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        catch (_: android.content.ActivityNotFoundException) { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        result.success(null)
+                    }
                     "notificationSettings" -> { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); result.success(null) }
                     "updateConnectionStatus" -> { ConnectionService.update(context, call.argument<String>("text") ?: "Ожидание устройств"); result.success(null) }
                     "openReceivedFile" -> {

@@ -84,7 +84,7 @@ class BridgeNode {
   Future<void> start({String? destination, String conflictPolicy = "rename"}) async {
     identity = await Identity.load(directory);
     await inbox.create(recursive: true);
-    sharedFiles = SharedFiles(directory);
+    sharedFiles = SharedFiles(directory, documents: folderProvider);
     await sharedFiles.load();
     sharedFolders = SharedFolders(directory, documents: folderProvider);
     await sharedFolders.load();
@@ -1015,14 +1015,10 @@ class BridgeNode {
       _respond(request, 404, {'error': 'File not shared'}); return;
     }
     if (!access.allows(parts[1], peer.id)) { _respond(request, 403, {'error': 'Доступ к файлу закрыт'}); return; }
-    final file = await sharedFiles.resolve(parts[1]);
-    if (file == null) { _respond(request, 404, {'error': 'File not shared'}); return; }
-    await _serveSource(request, peer, p.basename(file.path), (offset, length) async {
-      final stat = await file.stat();
-      if (offset > stat.size) throw const FileSystemException('Source changed');
-      final end = length == null ? stat.size : (offset + length < stat.size ? offset + length : stat.size);
-      return SharedRead(stat.size, file.openRead(offset, end), () async {}, version: contentVersion(stat.size, stat.modified));
-    });
+    final entry = await sharedFiles.metadata(parts[1]);
+    if (entry == null) { _respond(request, 404, {'error': 'File not shared'}); return; }
+    await _serveSource(request, peer, entry.name,
+      (offset, length) => sharedFiles.open(parts[1], offset: offset, length: length));
   }
 
   Future<void> _serveSource(HttpRequest request, Peer peer, String name,
@@ -1171,11 +1167,10 @@ class BridgeNode {
         source = await sharedFolders.open(folder, path);
         name = safeFilename(path);
       } else {
-        final file = await sharedFiles.resolve(id);
-        if (file == null) throw const FileSystemException('File unavailable');
-        final stat = await file.stat();
-        source = SharedRead(stat.size, file.openRead(), () async {});
-        name = p.basename(file.path);
+        final entry = await sharedFiles.metadata(id);
+        if (entry == null) throw const FileSystemException('File unavailable');
+        source = await sharedFiles.open(id);
+        name = entry.name;
       }
       _respond(request, 200, await FilePreview.create(name, source));
     } finally { try { await source?.close(); } catch (_) {} }

@@ -78,7 +78,7 @@ class BridgeController extends ChangeNotifier {
     notifyListeners();
     if (isAndroid && DateTime.now().difference(_lastNotification).inSeconds >= 1) {
       _lastNotification = DateTime.now();
-      unawaited(platformChannel.invokeMethod<void>('updateConnectionStatus', {'text': 'Устройств: $onlineCount · в очереди: ${queue?.pending ?? 0}'}).catchError((Object _) {}));
+      unawaited(platformChannel.invokeMethod<void>('updateConnectionStatus', {'text': node?.transferName == null ? 'Устройств: $onlineCount · в очереди: ${queue?.pending ?? 0}' : '${node!.transferName} · ${((node!.transferProgress ?? 0) * 100).round()}%'}).catchError((Object _) {}));
     }
   }
 
@@ -137,6 +137,7 @@ class BridgeController extends ChangeNotifier {
         available: (id) => node?.peers[id]?.online == true, changed: notifyListeners,
         verifyCopy: (id, receipt, digest) => node!.verifyReceipt(node!.peers[id]!, receipt, digest));
       await backup!.load(queue!.jobs);
+      await queue!.setBackupEnabled(backup!.enabled);
       queue!.start();
       if (Platform.isWindows || Platform.isLinux) {
         desktop = DesktopShell(directory: directory!, hideOnClose: () => closeToTray, shutdown: shutdown);
@@ -257,7 +258,7 @@ class BridgeController extends ChangeNotifier {
     if (queue != null) {
       for (final job in queue!.jobs.where((j) => j.peerId == peer.id).toList()) { await queue!.cancel(job); }
     }
-    if (backup?.peerId == peer.id) { backup!.enabled = false; await backup!.save(); }
+    if (backup?.peerId == peer.id) await setPhotoBackup(false);
     recentPeers.remove(peer.id); favorites.removeWhere((f) => f['peer'] == peer.id);
     await _saveSettings();
     await node?.forget(peer.id);
@@ -478,6 +479,17 @@ class BridgeController extends ChangeNotifier {
   }
 
   Future<int?> receiveFreeSpace() => freeBytes(receiveDestination?.startsWith('content://') == true ? node!.inbox.path : receiveDestination ?? node!.inbox.path);
+
+  Future<void> setPhotoBackup(bool enabled) async {
+    final current = backup;
+    if (current == null) return;
+    if (enabled && (current.peerId == null || current.sources.roots().isEmpty)) throw StateError('Выберите устройство и папку с фото');
+    final saving = current.setEnabled(enabled);
+    await queue?.setBackupEnabled(enabled);
+    await saving;
+    if (enabled) unawaited(current.scan());
+    notifyListeners();
+  }
 
   Future<void> refreshBackground() async {
     if (!isAndroid) return;
