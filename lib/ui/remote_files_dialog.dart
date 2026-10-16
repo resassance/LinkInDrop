@@ -182,11 +182,10 @@ class _RemoteFilesDialogState extends State<RemoteFilesDialog> {
     ]));
 
   @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
-    if (size.width < 600) return Dialog.fullscreen(child: _browser());
-    return Dialog(clipBehavior: Clip.antiAlias, child: SizedBox(width: 720, height: size.height * 0.85, child: _browser()));
-  }
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {
+    if (constraints.maxWidth < 600) return Dialog.fullscreen(child: _browser());
+    return Dialog(clipBehavior: Clip.antiAlias, child: SizedBox(width: 720, height: constraints.maxHeight * 0.85, child: _browser()));
+  });
 }
 
 class _Thumbnail extends StatefulWidget {
