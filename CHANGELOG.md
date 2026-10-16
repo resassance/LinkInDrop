@@ -5,6 +5,8 @@
 - Stabilize the page scrollbar and preserve scroll position during transfer updates.
 - Adapt queue and remote-folder actions to narrow windows and avoid dropdown overflow.
 - Disabling photo backup now interrupts scanning and pauses its queued transfers; enabling resumes only automatically paused jobs.
+- Keep remote browsing available during other operations, select the only paired device automatically and offer a device chooser.
+- Start the transfer controller independently of UI frames for Android boot recovery.
 - Persist Android document-file grants for remote browsing and downloading, and enable sharing when content is added.
 - Keep Android CPU and Wi-Fi available while the background service is enabled, expose battery exemption and notification settings, and show transfer progress in its notification.
 
