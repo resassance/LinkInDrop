@@ -9,7 +9,7 @@ import 'relay_transport.dart';
 const protocolVersion = 1;
 const maxClipboardBytes = 8 * 1024 * 1024;
 const maxTextBytes = 256 * 1024;
-const maxFileBytes = 2 * 1024 * 1024 * 1024;
+const maxFileBytes = 8 * 1024 * 1024 * 1024 * 1024;
 
 String randomToken([int bytes = 32]) {
   final random = Random.secure();
@@ -144,6 +144,9 @@ class Peer {
   String? relayUrl;
   String? relayRoom;
   bool activeRelay = false;
+  int? latencyMs;
+  String? connectionFailure;
+  String get routeLabel => activeRelay ? "Ретранслятор" : remoteHost == connectionHost ? "VPN / удалённый адрес" : "Прямое соединение (LAN/VPN)";
   List<String> additionalHosts;
   String? activeHost;
   int? activePort;
@@ -196,7 +199,7 @@ class SharedFile {
     if (rootName != null) 'rootName': rootName};
   factory SharedFile.fromJson(Map<String, dynamic> value) {
     if (value['id'] is! String ||
-        !RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(value['id'] as String) ||
+        !RegExp(r'^(?:[A-Za-z0-9_-]{22}|receipt:[a-f0-9]{64})$').hasMatch(value['id'] as String) ||
         value['name'] is! String || (value['name'] as String).length > 120 ||
         value['size'] is! int || (value['size'] as int) < 0 ||
         (value['size'] as int) > maxFileBytes ||

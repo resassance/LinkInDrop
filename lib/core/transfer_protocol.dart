@@ -166,7 +166,7 @@ class UploadStore {
         await file.writeAsBytes([]);
         throw const FormatException('File checksum mismatch');
       }
-      final relative = meta['relative'] as String? ?? '${randomToken(8)}_${safeFilename(meta['name'] as String)}';
+      final relative = '${randomToken(8)}_${safeFilename(meta['name'] as String)}';
       var target = await inboxDestination(inbox, relative);
       if (await target.exists()) throw const FileSystemException('Destination already exists');
       meta['output'] = p.relative(target.path, from: inbox.path);
@@ -178,6 +178,16 @@ class UploadStore {
       await _save(key, meta);
       return {'done': true, 'sha256': digest, 'path': target.path};
     });
+  }
+
+  Future<Map<String, dynamic>> metadata(String peer, String id) async {
+    _validateId(id); return _load(_key(peer, id));
+  }
+
+  Future<File> completedFile(String peer, String id) async {
+    final meta = await metadata(peer, id);
+    if (meta['done'] != true || meta['output'] is! String) throw const FileSystemException('Upload incomplete');
+    return File(p.joinAll([inbox.path, ...portablePath(meta['output'] as String).split('/')]));
   }
 
   Future<void> cancel(String peer, String id) async {

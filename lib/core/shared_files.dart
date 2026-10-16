@@ -43,7 +43,7 @@ class SharedFiles {
         await FileSystemEntity.type(canonical, followLinks: false) != FileSystemEntityType.file) {
       throw StateError('Этот файл нельзя открыть для удалённого доступа');
     }
-    if (await file.length() > maxFileBytes) throw StateError('Лимит файла — 2 ГБ');
+    if (await file.length() > maxFileBytes) throw StateError('Лимит файла — 8 ТБ');
     if (_paths.containsValue(canonical)) return;
     _paths[randomToken(16)] = canonical;
     await _save();
