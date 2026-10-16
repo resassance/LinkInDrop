@@ -28,7 +28,6 @@ void main() {
       first.fileSharingEnabled = true;
       final entry = (await second.listFiles(peer)).single;
       expect(entry.name, 'sample.bin');
-      // Failed remote endpoint must fall back to the pinned original address.
       peer.remoteHost = '127.0.0.2';
       peer.remotePort = 1;
       await second.downloadFile(peer, entry);

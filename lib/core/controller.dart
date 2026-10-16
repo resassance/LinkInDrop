@@ -11,6 +11,13 @@ import 'clipboard_adapter.dart';
 import 'models.dart';
 import 'node.dart';
 import 'windows_network.dart';
+import 'android_folders.dart';
+import 'shared_folders.dart';
+import 'transfer_protocol.dart';
+import 'transfer_queue.dart';
+import 'photo_backup.dart';
+import 'desktop_shell.dart';
+import 'access_rules.dart';
 
 class BridgeController extends ChangeNotifier {
   BridgeController({ClipboardAdapter? clipboard}) : clipboard = clipboard ?? ClipboardAdapter();
@@ -19,6 +26,11 @@ class BridgeController extends ChangeNotifier {
   final List<String> pendingFiles = [];
   final platformChannel = const MethodChannel('nearbridge/system');
   BridgeNode? node;
+  TransferQueue? queue;
+  PhotoBackup? backup;
+  DesktopShell? desktop;
+  bool closeToTray = true;
+  String? relayAddress;
   Directory? directory;
   bool loading = true;
   bool busy = false;
@@ -36,6 +48,7 @@ class BridgeController extends ChangeNotifier {
   bool _polling = false;
   Future<void> _clipboardQueue = Future.value();
   Future<bool> Function(String)? pairingApproval;
+  Future<void> _settingsSaving = Future.value();
   bool get isAndroid => Platform.isAndroid;
   List<Peer> get peers => node?.peers.values.toList() ?? [];
   int get onlineCount => peers.where((p) => p.online).length;
@@ -45,6 +58,8 @@ class BridgeController extends ChangeNotifier {
     }
     return null;
   }
+
+  void changed() => notifyListeners();
 
   void record(Activity activity) {
     activities.insert(0, activity);
@@ -63,11 +78,37 @@ class BridgeController extends ChangeNotifier {
         receiveClipboard = data['receiveClipboard'] as bool? ?? true;
         receiveFiles = data['receiveFiles'] as bool? ?? true;
         shareFiles = data['shareFiles'] as bool? ?? false;
+        closeToTray = data['closeToTray'] as bool? ?? true;
+        relayAddress = data['relay'] as String?;
       }
       node = BridgeNode(directory: directory!, name: deviceName,
+        folderProvider: isAndroid ? const AndroidFolders() : null,
         onPairRequest: (name) async => await pairingApproval?.call(name) ?? false,
         onClipboard: _receiveClipboard, onActivity: record, onChanged: notifyListeners);
       await node!.start();
+      if (relayAddress != null) unawaited(node!.configureRelay(relayAddress));
+      queue = TransferQueue(directory: directory!, execute: _executeJob,
+        interrupt: () => node?.cancelTransfer(), completed: (job) async { await backup?.completed(job); await _cleanShared(job); },
+        discard: (job) async {
+          await node?.discardDownload(job.id);
+          backup?.cancelled(job);
+          await _cleanShared(job);
+          final peer = node?.peers[job.peerId];
+          if (peer != null && peer.online && job.progress > 0 && (job.kind == 'upload' || job.kind == 'backup')) {
+            try { await node!.cancelUpload(peer, job.id); } catch (_) {}
+          }
+        })..addListener(notifyListeners);
+      await queue!.load();
+      backup = PhotoBackup(directory: directory!,
+        sources: SharedFolders(directory!, documents: isAndroid ? const AndroidFolders() : null,
+          stateFilename: 'backup-folders.json'), enqueue: queue!.addAll,
+        available: (id) => node?.peers[id]?.online == true, changed: notifyListeners);
+      await backup!.load(queue!.jobs);
+      queue!.start();
+      if (Platform.isWindows || Platform.isLinux) {
+        desktop = DesktopShell(directory: directory!, hideOnClose: () => closeToTray, shutdown: shutdown);
+        try { await desktop!.start(); } catch (error) { record(Activity('Фоновый режим недоступен', '$error', error: true)); }
+      }
       final received = await node!.inbox.list().where((item) => item is File &&
         !p.basename(item.path).startsWith('.')).cast<File>().toList();
       received.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
@@ -80,6 +121,7 @@ class BridgeController extends ChangeNotifier {
       _clipboardTimer = Timer.periodic(const Duration(milliseconds: 1200),
         (_) => unawaited(_pollClipboard()));
       await node!.checkPeers();
+      unawaited(backup?.scan());
       if (isAndroid) {
         platformChannel.setMethodCallHandler((call) async {
           if (call.method == 'shared') await handleShared();
@@ -97,11 +139,17 @@ class BridgeController extends ChangeNotifier {
 
   Future<void> _saveSettings() async {
     if (directory == null) return;
-    await File(p.join(directory!.path, 'settings.json')).writeAsString(jsonEncode({
+    final content = jsonEncode({
       'name': deviceName, 'autoClipboard': autoClipboard,
       'receiveClipboard': receiveClipboard, 'receiveFiles': receiveFiles,
-      'shareFiles': shareFiles,
-    }), flush: true);
+      'shareFiles': shareFiles, 'closeToTray': closeToTray, 'relay': relayAddress,
+    });
+    _settingsSaving = _settingsSaving.catchError((Object _) {}).then((_) async {
+      final file = File(p.join(directory!.path, 'settings.json.new'));
+      await file.writeAsString(content, flush: true);
+      await file.rename(p.join(directory!.path, 'settings.json'));
+    });
+    await _settingsSaving;
   }
 
   Future<void> setSettings({bool? automatic, bool? clipboardReceiving, bool? filesReceiving,
@@ -142,6 +190,7 @@ class BridgeController extends ChangeNotifier {
 
   Future<void> pair(String code) async {
     final invite = PairInvite.parse(code);
+    if (relayAddress == null && invite.relayUrl != null) await setRelay(invite.relayUrl!);
     try {
       await node!.pair(invite, onStage: (stage) {
         pairingStage = stage;
@@ -168,6 +217,10 @@ class BridgeController extends ChangeNotifier {
   }
 
   Future<void> forget(Peer peer) async {
+    if (queue != null) {
+      for (final job in queue!.jobs.where((j) => j.peerId == peer.id).toList()) { await queue!.cancel(job); }
+    }
+    if (backup?.peerId == peer.id) { backup!.enabled = false; await backup!.save(); }
     await node?.forget(peer.id);
     if (selectedPeerId == peer.id) selectedPeerId = null;
     notifyListeners();
@@ -232,17 +285,138 @@ class BridgeController extends ChangeNotifier {
   Future<void> sendFile(String path, {String? name}) async {
     final peer = selectedPeer;
     if (peer == null) throw StateError('Выберите устройство');
-    await node!.sendFile(peer, path, filename: name);
+    await enqueuePaths(peer, [path], names: name == null ? null : {path: name});
+  }
+
+  Future<void> _cleanShared(TransferJob job) async {
+    final path = job.source;
+    if (job.kind == 'upload' && path != null && directory != null && p.isWithin(p.join(directory!.path, 'shared'), path)) {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    }
+  }
+
+  Future<void> _executeJob(TransferJob job, void Function(double) progress) async {
+    final peer = node!.peers[job.peerId];
+    if (peer == null) throw StateError('Устройство отключено');
+    void update() { progress(node!.transferProgress ?? 0); }
+    final timer = Timer.periodic(const Duration(milliseconds: 200), (_) => update());
+    try {
+      if (job.kind == 'downloadDirectory') {
+        await inboxDirectory(node!.inbox, job.relative!);
+      } else if (job.kind == 'uploadDirectory') {
+        await node!.uploadDirectory(peer, job.relative!);
+      } else if (job.kind == 'download') {
+        await node!.downloadFile(peer, job.entry!, relative: job.relative, transferId: job.id);
+      } else {
+        Future<SharedRead> open(int offset, int? length) async {
+          if (job.sourceFolder != null) return backup!.sources.open(job.sourceFolder!, job.source!, offset: offset, length: length);
+          final file = File(job.source!);
+          final stat = await file.stat();
+          if (stat.type != FileSystemEntityType.file || offset > stat.size) throw const FileSystemException('Source unavailable');
+          final end = length == null ? stat.size : (offset + length < stat.size ? offset + length : stat.size);
+          return SharedRead(stat.size, file.openRead(offset, end), () async {}, version: contentVersion(stat.size, stat.modified));
+        }
+        job.digest = await node!.uploadSource(peer, job.id, job.name, open,
+          relative: job.relative, expectedDigest: job.digest,
+          onDigest: (digest) { job.digest = digest; unawaited(queue!.save()); });
+      }
+    } finally { timer.cancel(); update(); }
+  }
+
+  Future<void> enqueuePaths(Peer peer, List<String> paths, {Map<String, String>? names}) async {
+    final jobs = <TransferJob>[];
+    final batch = randomToken(8);
+    for (final path in paths) {
+      final type = await FileSystemEntity.type(path, followLinks: false);
+      if (type == FileSystemEntityType.directory) {
+        final root = Directory(path);
+        final label = safeFilename(p.basename(path));
+        jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'uploadDirectory', name: label, relative: '${batch}_$label'));
+        await for (final entry in root.list(recursive: true, followLinks: false)) {
+          if (entry is Link) continue;
+          if (jobs.length >= 20000) throw StateError('В папке больше 20 000 элементов. Выберите подпапку.');
+          final relative = p.relative(entry.path, from: path).split(p.separator).join('/');
+          if (entry is Directory) {
+            jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'uploadDirectory',
+              name: p.basename(entry.path), relative: '${batch}_$label/$relative'));
+            continue;
+          }
+          if (entry is! File || await entry.length() > maxFileBytes) continue;
+          jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'upload',
+            name: p.basename(entry.path), source: entry.path, relative: '${batch}_$label/$relative'));
+        }
+      } else if (type == FileSystemEntityType.file) {
+        if (await File(path).length() > maxFileBytes) throw StateError('Лимит файла — 2 ГБ');
+        jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'upload', name: names?[path] ?? p.basename(path), source: path));
+      } else { throw StateError('Файл или папка недоступны: $path'); }
+    }
+    await queue!.addAll(jobs);
+    record(Activity('Добавлено в очередь', '${jobs.length} файлов → ${peer.name}'));
+  }
+
+  Future<void> enqueueDownload(Peer peer, SharedFile entry) async {
+    if (!entry.isDirectory) {
+      await queue!.addAll([TransferJob(id: randomToken(16), peerId: peer.id, kind: 'download', name: entry.name, entry: entry)]);
+      return;
+    }
+    final jobs = <TransferJob>[];
+    final pending = <(SharedFile, int)>[(entry, 0)];
+    final group = '${randomToken(8)}_${entry.name}';
+    jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'downloadDirectory', name: entry.name, relative: group));
+    final prefix = entry.relativePath!.isEmpty ? '' : '${entry.relativePath}/';
+    while (pending.isNotEmpty) {
+      final next = pending.removeLast();
+      final page = await node!.browseFiles(peer, folder: next.$1, offset: next.$2);
+      if (page.nextOffset != null) pending.add((next.$1, page.nextOffset!));
+      for (final child in page.entries) {
+        if (child.isDirectory) {
+          pending.add((child, 0));
+          jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'downloadDirectory', name: child.name,
+            relative: '$group/${child.relativePath!.substring(prefix.length)}'));
+          continue;
+        }
+        if (!child.relativePath!.startsWith(prefix)) throw const FormatException('Invalid folder response');
+        jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'download',
+          name: child.name, entry: child, relative: '$group/${child.relativePath!.substring(prefix.length)}'));
+        if (jobs.length > 20000) throw StateError('В папке больше 20 000 файлов. Выберите подпапку.');
+      }
+    }
+    await queue!.addAll(jobs);
+    record(Activity('Папка добавлена в очередь', '${entry.name} · ${jobs.length} файлов'));
+  }
+
+  Future<void> setIncomingFiles(Peer peer, bool enabled) async {
+    peer.incomingFilesEnabled = enabled;
+    await node!.savePeers();
+    notifyListeners();
+  }
+
+  Future<void> setShareAccess(String id, Set<String>? peers, DateTime? expires) async {
+    await node!.access.set(id, ShareAccess(peerIds: peers, expiresAt: expires));
+    notifyListeners();
+  }
+
+  Future<void> setDesktop({bool? hide, bool? startup}) async {
+    if (hide != null) closeToTray = hide;
+    if (startup != null) await desktop?.setStartup(startup);
+    await _saveSettings();
+    notifyListeners();
+  }
+
+  Future<void> setRelay(String value) async {
+    final address = value.trim();
+    await node!.configureRelay(address.isEmpty ? null : address);
+    relayAddress = address.isEmpty ? null : address;
+    await _saveSettings();
+    record(Activity('Интернет-подключение', node!.relayHost?.online == true ? 'Ретранслятор подключён' : address.isEmpty ? 'Ретранслятор выключен' : 'Ожидается подключение к серверу'));
+    notifyListeners();
   }
 
   Future<void> sendPendingFiles() async {
     for (final path in pendingFiles.toList()) {
       await sendFile(path);
       pendingFiles.remove(path);
-      if (directory != null && p.isWithin(p.join(directory!.path, 'shared'), path)) {
-        final file = File(path);
-        if (await file.exists()) await file.delete();
-      }
       notifyListeners();
     }
   }
@@ -271,12 +445,17 @@ class BridgeController extends ChangeNotifier {
   Future<void> shutdown() async {
     _clipboardTimer?.cancel();
     if (isAndroid) await platformChannel.invokeMethod<void>('stopConnection');
+    await backup?.close();
+    await queue?.close();
     await node?.stop();
+    await desktop?.close();
+    await _settingsSaving;
   }
 
   @override
   void dispose() {
     _clipboardTimer?.cancel();
+    queue?.removeListener(notifyListeners);
     super.dispose();
   }
 }
