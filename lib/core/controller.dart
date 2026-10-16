@@ -18,6 +18,8 @@ import 'transfer_queue.dart';
 import 'photo_backup.dart';
 import 'desktop_shell.dart';
 import 'access_rules.dart';
+import 'release_info.dart';
+import 'receive_storage.dart';
 
 class BridgeController extends ChangeNotifier {
   BridgeController({ClipboardAdapter? clipboard}) : clipboard = clipboard ?? ClipboardAdapter();
@@ -31,6 +33,16 @@ class BridgeController extends ChangeNotifier {
   DesktopShell? desktop;
   bool closeToTray = true;
   String? relayAddress;
+  String? receiveDestination;
+  String conflictPolicy = "rename";
+  int speedLimit = 0;
+  bool androidBackground = true;
+  bool androidBoot = false;
+  Map<String, dynamic> backgroundStatus = {};
+  final List<String> recentPeers = [];
+  final List<Map<String, dynamic>> favorites = [];
+  Map<String, String>? newerRelease;
+  String? updateMessage;
   Directory? directory;
   bool loading = true;
   bool busy = false;
@@ -38,7 +50,8 @@ class BridgeController extends ChangeNotifier {
   bool receiveClipboard = true;
   bool receiveFiles = true;
   bool shareFiles = false;
-  bool mobileActive = true;
+  bool mobileActive = !Platform.isAndroid;
+  DateTime _lastNotification = DateTime.fromMillisecondsSinceEpoch(0);
   String deviceName = Platform.localHostname;
   String? startupError;
   String? selectedPeerId;
@@ -61,6 +74,14 @@ class BridgeController extends ChangeNotifier {
 
   void changed() => notifyListeners();
 
+  void _nodeChanged() {
+    notifyListeners();
+    if (isAndroid && DateTime.now().difference(_lastNotification).inSeconds >= 1) {
+      _lastNotification = DateTime.now();
+      unawaited(platformChannel.invokeMethod<void>('updateConnectionStatus', {'text': 'Устройств: $onlineCount · в очереди: ${queue?.pending ?? 0}'}).catchError((Object _) {}));
+    }
+  }
+
   void record(Activity activity) {
     activities.insert(0, activity);
     if (activities.length > 40) activities.removeLast();
@@ -80,12 +101,22 @@ class BridgeController extends ChangeNotifier {
         shareFiles = data['shareFiles'] as bool? ?? false;
         closeToTray = data['closeToTray'] as bool? ?? true;
         relayAddress = data['relay'] as String?;
+        receiveDestination = data['receiveDestination'] as String?;
+        conflictPolicy = data['conflictPolicy'] as String? ?? 'rename';
+        speedLimit = data['speedLimit'] as int? ?? 0;
+        androidBackground = data['androidBackground'] as bool? ?? true;
+        androidBoot = data['androidBoot'] as bool? ?? false;
+        selectedPeerId = data['selectedPeer'] as String?;
+        recentPeers.addAll((data['recentPeers'] as List? ?? []).cast<String>());
+        favorites.addAll((data['favorites'] as List? ?? []).map((e) => (e as Map).cast<String, dynamic>()));
       }
       node = BridgeNode(directory: directory!, name: deviceName,
         folderProvider: isAndroid ? const AndroidFolders() : null,
         onPairRequest: (name) async => await pairingApproval?.call(name) ?? false,
-        onClipboard: _receiveClipboard, onActivity: record, onChanged: notifyListeners);
-      await node!.start();
+        onClipboard: _receiveClipboard, onActivity: record, onChanged: _nodeChanged);
+      node!.clipboardReceivingEnabled = receiveClipboard; node!.receivingEnabled = receiveFiles; node!.fileSharingEnabled = shareFiles;
+      node!.bytesPerSecond = speedLimit;
+      await node!.start(destination: receiveDestination, conflictPolicy: conflictPolicy);
       if (relayAddress != null) unawaited(node!.configureRelay(relayAddress));
       queue = TransferQueue(directory: directory!, execute: _executeJob,
         interrupt: () => node?.cancelTransfer(), completed: (job) async { await backup?.completed(job); await _cleanShared(job); },
@@ -102,7 +133,8 @@ class BridgeController extends ChangeNotifier {
       backup = PhotoBackup(directory: directory!,
         sources: SharedFolders(directory!, documents: isAndroid ? const AndroidFolders() : null,
           stateFilename: 'backup-folders.json'), enqueue: queue!.addAll,
-        available: (id) => node?.peers[id]?.online == true, changed: notifyListeners);
+        available: (id) => node?.peers[id]?.online == true, changed: notifyListeners,
+        verifyCopy: (id, receipt, digest) => node!.verifyReceipt(node!.peers[id]!, receipt, digest));
       await backup!.load(queue!.jobs);
       queue!.start();
       if (Platform.isWindows || Platform.isLinux) {
@@ -126,7 +158,8 @@ class BridgeController extends ChangeNotifier {
         platformChannel.setMethodCallHandler((call) async {
           if (call.method == 'shared') await handleShared();
         });
-        await platformChannel.invokeMethod<void>('startConnection');
+        await platformChannel.invokeMethod<void>('setBackgroundSettings', {'enabled': androidBackground, 'boot': androidBoot});
+        await refreshBackground();
         await handleShared();
       }
     } catch (error) {
@@ -143,6 +176,9 @@ class BridgeController extends ChangeNotifier {
       'name': deviceName, 'autoClipboard': autoClipboard,
       'receiveClipboard': receiveClipboard, 'receiveFiles': receiveFiles,
       'shareFiles': shareFiles, 'closeToTray': closeToTray, 'relay': relayAddress,
+      'receiveDestination': receiveDestination, 'conflictPolicy': conflictPolicy, 'speedLimit': speedLimit,
+      'androidBackground': androidBackground, 'androidBoot': androidBoot, 'recentPeers': recentPeers,
+      'selectedPeer': selectedPeerId, 'favorites': favorites,
     });
     _settingsSaving = _settingsSaving.catchError((Object _) {}).then((_) async {
       final file = File(p.join(directory!.path, 'settings.json.new'));
@@ -221,6 +257,8 @@ class BridgeController extends ChangeNotifier {
       for (final job in queue!.jobs.where((j) => j.peerId == peer.id).toList()) { await queue!.cancel(job); }
     }
     if (backup?.peerId == peer.id) { backup!.enabled = false; await backup!.save(); }
+    recentPeers.remove(peer.id); favorites.removeWhere((f) => f['peer'] == peer.id);
+    await _saveSettings();
     await node?.forget(peer.id);
     if (selectedPeerId == peer.id) selectedPeerId = null;
     notifyListeners();
@@ -228,6 +266,9 @@ class BridgeController extends ChangeNotifier {
 
   void selectPeer(String id) {
     selectedPeerId = id;
+    recentPeers.remove(id); recentPeers.insert(0, id);
+    if (recentPeers.length > 8) recentPeers.removeLast();
+    unawaited(_saveSettings());
     notifyListeners();
   }
 
@@ -299,15 +340,28 @@ class BridgeController extends ChangeNotifier {
   Future<void> _executeJob(TransferJob job, void Function(double) progress) async {
     final peer = node!.peers[job.peerId];
     if (peer == null) throw StateError('Устройство отключено');
-    void update() { progress(node!.transferProgress ?? 0); }
+    final clock = Stopwatch()..start();
+    var lastBytes = 0;
+    var lastTime = 0;
+    void update() {
+      if (node!.transferTotal > 0 && node!.transferName != null) job.totalBytes = node!.transferTotal;
+      final done = ((node!.transferProgress ?? 0) * job.totalBytes).round();
+      final elapsed = clock.elapsedMilliseconds;
+      if (done > lastBytes && elapsed > lastTime) {
+        final rate = (done - lastBytes) * 1000 / (elapsed - lastTime);
+        job.bytesPerSecond = job.bytesPerSecond == 0 ? rate : job.bytesPerSecond * 0.7 + rate * 0.3;
+        lastBytes = done; lastTime = elapsed;
+      }
+      progress(node!.transferProgress ?? job.progress);
+    }
     final timer = Timer.periodic(const Duration(milliseconds: 200), (_) => update());
     try {
       if (job.kind == 'downloadDirectory') {
-        await inboxDirectory(node!.inbox, job.relative!);
+        await node!.received.createDirectory(job.relative!);
       } else if (job.kind == 'uploadDirectory') {
         await node!.uploadDirectory(peer, job.relative!);
       } else if (job.kind == 'download') {
-        await node!.downloadFile(peer, job.entry!, relative: job.relative, transferId: job.id);
+        await node!.downloadFile(peer, job.entry!, relative: job.relative, transferId: job.id, expectedDigest: job.digest);
       } else {
         Future<SharedRead> open(int offset, int? length) async {
           if (job.sourceFolder != null) return backup!.sources.open(job.sourceFolder!, job.source!, offset: offset, length: length);
@@ -320,6 +374,8 @@ class BridgeController extends ChangeNotifier {
         job.digest = await node!.uploadSource(peer, job.id, job.name, open,
           relative: job.relative, expectedDigest: job.digest,
           onDigest: (digest) { job.digest = digest; unawaited(queue!.save()); });
+        if (node!.lastUploadReceipt?['skipped'] == true && job.kind == 'backup') throw StateError('Получатель пропустил фото из-за совпадения имени');
+        job.receipt = node!.lastUploadReceipt?['receipt'] as String?;
       }
     } finally { timer.cancel(); update(); }
   }
@@ -332,38 +388,42 @@ class BridgeController extends ChangeNotifier {
       if (type == FileSystemEntityType.directory) {
         final root = Directory(path);
         final label = safeFilename(p.basename(path));
-        jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'uploadDirectory', name: label, relative: '${batch}_$label'));
+        jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'uploadDirectory', name: label, batchId: batch, relative: '${batch}_$label'));
         await for (final entry in root.list(recursive: true, followLinks: false)) {
           if (entry is Link) continue;
           if (jobs.length >= 20000) throw StateError('В папке больше 20 000 элементов. Выберите подпапку.');
           final relative = p.relative(entry.path, from: path).split(p.separator).join('/');
           if (entry is Directory) {
             jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'uploadDirectory',
-              name: p.basename(entry.path), relative: '${batch}_$label/$relative'));
+              name: p.basename(entry.path), batchId: batch, relative: '${batch}_$label/$relative'));
             continue;
           }
           if (entry is! File || await entry.length() > maxFileBytes) continue;
           jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'upload',
-            name: p.basename(entry.path), source: entry.path, relative: '${batch}_$label/$relative'));
+            name: p.basename(entry.path), source: entry.path, batchId: batch, relative: '${batch}_$label/$relative'));
         }
       } else if (type == FileSystemEntityType.file) {
-        if (await File(path).length() > maxFileBytes) throw StateError('Лимит файла — 2 ГБ');
+        if (await File(path).length() > maxFileBytes) throw StateError('Лимит файла — 8 ТБ');
         jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'upload', name: names?[path] ?? p.basename(path), source: path));
       } else { throw StateError('Файл или папка недоступны: $path'); }
     }
+    for (final job in jobs) {
+      if (job.source != null) job.totalBytes = await File(job.source!).length();
+    }
+    selectPeer(peer.id);
     await queue!.addAll(jobs);
     record(Activity('Добавлено в очередь', '${jobs.length} файлов → ${peer.name}'));
   }
 
   Future<void> enqueueDownload(Peer peer, SharedFile entry) async {
     if (!entry.isDirectory) {
-      await queue!.addAll([TransferJob(id: randomToken(16), peerId: peer.id, kind: 'download', name: entry.name, entry: entry)]);
+      await queue!.addAll([TransferJob(id: randomToken(16), peerId: peer.id, kind: 'download', name: entry.name, entry: entry, totalBytes: entry.size)]);
       return;
     }
     final jobs = <TransferJob>[];
     final pending = <(SharedFile, int)>[(entry, 0)];
     final group = '${randomToken(8)}_${entry.name}';
-    jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'downloadDirectory', name: entry.name, relative: group));
+    jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'downloadDirectory', name: entry.name, batchId: group, relative: group));
     final prefix = entry.relativePath!.isEmpty ? '' : '${entry.relativePath}/';
     while (pending.isNotEmpty) {
       final next = pending.removeLast();
@@ -372,18 +432,88 @@ class BridgeController extends ChangeNotifier {
       for (final child in page.entries) {
         if (child.isDirectory) {
           pending.add((child, 0));
-          jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'downloadDirectory', name: child.name,
+          jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'downloadDirectory', name: child.name, batchId: group,
             relative: '$group/${child.relativePath!.substring(prefix.length)}'));
           continue;
         }
         if (!child.relativePath!.startsWith(prefix)) throw const FormatException('Invalid folder response');
         jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'download',
-          name: child.name, entry: child, relative: '$group/${child.relativePath!.substring(prefix.length)}'));
+          name: child.name, entry: child, totalBytes: child.size, batchId: group, relative: '$group/${child.relativePath!.substring(prefix.length)}'));
         if (jobs.length > 20000) throw StateError('В папке больше 20 000 файлов. Выберите подпапку.');
       }
     }
     await queue!.addAll(jobs);
     record(Activity('Папка добавлена в очередь', '${entry.name} · ${jobs.length} файлов'));
+  }
+
+  Future<void> setReceiveStorage(String? destination, String policy) async {
+    if (!['rename', 'skip', 'replace'].contains(policy)) throw const FormatException('Invalid conflict policy');
+    if (destination != null && !destination.startsWith('content://')) {
+      final folder = Directory(destination);
+      final root = await folder.resolveSymbolicLinks();
+      if (!p.equals(root, p.normalize(destination)) || p.equals(root, directory!.path) || p.isWithin(directory!.path, root)) throw StateError('Выберите папку вне данных Nearbridge');
+      final probe = File(p.join(root, '.nearbridge-${randomToken(8)}'));
+      try { await probe.writeAsString('', flush: true); } finally { if (await probe.exists()) await probe.delete(); }
+      destination = root;
+    }
+    receiveDestination = destination; conflictPolicy = policy;
+    node!.received.destination = destination; node!.received.conflict = policy;
+    await _saveSettings(); notifyListeners();
+  }
+
+  Future<void> setSpeedLimit(int bytes) async {
+    if (bytes < 0 || bytes > 1024 * 1024 * 1024) throw const FormatException('Invalid speed limit');
+    speedLimit = bytes; node!.bytesPerSecond = bytes; await _saveSettings(); notifyListeners();
+  }
+
+  Future<int?> receiveFreeSpace() => freeBytes(receiveDestination?.startsWith('content://') == true ? node!.inbox.path : receiveDestination ?? node!.inbox.path);
+
+  Future<void> refreshBackground() async {
+    if (!isAndroid) return;
+    backgroundStatus = await platformChannel.invokeMapMethod<String, dynamic>('backgroundStatus') ?? {};
+    notifyListeners();
+  }
+
+  Future<void> setAndroidBackground(bool enabled, bool boot) async {
+    androidBackground = enabled; androidBoot = boot && enabled;
+    await _saveSettings();
+    await platformChannel.invokeMethod<void>('setBackgroundSettings', {'enabled': enabled, 'boot': androidBoot});
+    await refreshBackground();
+  }
+
+  Future<void> checkUpdates() async {
+    newerRelease = await checkRelease();
+    updateMessage = newerRelease == null ? 'Установлена актуальная версия' : 'Доступна ${newerRelease!['version']}';
+    notifyListeners();
+  }
+
+  bool isFavorite(String peer, SharedFile folder) => favorites.any((f) => f['peer'] == peer && f['folder'] == folder.folderId && f['path'] == folder.relativePath);
+
+  Future<void> toggleFavorite(String peer, SharedFile folder) async {
+    if (isFavorite(peer, folder)) {
+      favorites.removeWhere((f) => f['peer'] == peer && f['folder'] == folder.folderId && f['path'] == folder.relativePath);
+    } else {
+      if (favorites.length >= 50) throw StateError('Можно сохранить 50 папок');
+      favorites.add({'peer': peer, 'folder': folder.folderId, 'path': folder.relativePath, 'entry': folder.toJson()});
+    }
+    await _saveSettings(); notifyListeners();
+  }
+
+  Future<void> repeat(TransferJob job) async {
+    if (job.kind == 'upload' && job.source != null) {
+      await enqueuePaths(node!.peers[job.peerId]!, [job.source!]);
+    } else if (job.kind == 'download' && job.entry != null) {
+      await enqueueDownload(node!.peers[job.peerId]!, job.entry!);
+    }
+  }
+
+  Future<void> restorePhoto(Map<String, dynamic> copy) async {
+    final peer = node!.peers[copy['peer']];
+    if (peer == null) throw StateError('Устройство не привязано');
+    await queue!.addAll([TransferJob(id: randomToken(16), peerId: peer.id, kind: 'download', name: copy['name'] as String,
+      digest: copy['digest'] as String, totalBytes: copy['bytes'] as int? ?? 0,
+      relative: 'RestoredPhotos/${copy['name']}',
+      entry: SharedFile(id: 'receipt:${copy['receipt']}', name: copy['name'] as String, size: copy['bytes'] as int? ?? 0))]);
   }
 
   Future<void> setIncomingFiles(Peer peer, bool enabled) async {

@@ -7,10 +7,13 @@ import '../core/models.dart';
 
 class RemoteFilesDialog extends StatefulWidget {
   const RemoteFilesDialog({super.key, required this.deviceName, required this.load,
-    required this.canDownload, this.search, this.preview});
+    required this.canDownload, this.search, this.preview, this.initialFolder, this.isFavorite, this.toggleFavorite});
   final String deviceName;
   final Future<SharedPage> Function(SharedFile? folder, int offset) load;
   final bool canDownload;
+  final SharedFile? initialFolder;
+  final bool Function(SharedFile)? isFavorite;
+  final Future<void> Function(SharedFile)? toggleFavorite;
   final Future<SharedPage> Function(SharedFile?, String, String?)? search;
   final Future<Map<String, dynamic>> Function(SharedFile)? preview;
 
@@ -84,6 +87,7 @@ class _RemoteFilesDialogState extends State<RemoteFilesDialog> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialFolder != null) _folders.add(widget.initialFolder!);
     unawaited(_load(reset: true));
   }
 
@@ -165,6 +169,10 @@ class _RemoteFilesDialogState extends State<RemoteFilesDialog> {
               _enter(entry);
             } : () => _showPreview(entry),
             trailing: entry.isDirectory ? Row(mainAxisSize: MainAxisSize.min, children: [
+              if (widget.toggleFavorite != null) IconButton(tooltip: 'Избранная папка',
+                icon: Icon(widget.isFavorite?.call(entry) == true ? Icons.star : Icons.star_outline), onPressed: () async {
+                  await widget.toggleFavorite!(entry); if (mounted) setState(() {});
+                }),
               IconButton(tooltip: 'Скачать папку', icon: const Icon(Icons.download_rounded),
                 onPressed: _loading || !widget.canDownload ? null : () => Navigator.pop(context, entry)),
               const Icon(Icons.chevron_right_rounded)])

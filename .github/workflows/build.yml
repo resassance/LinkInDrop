@@ -66,7 +66,13 @@ jobs:
       - if: matrix.platform == 'windows'
         run: flutter build windows --release
       - if: matrix.platform == 'android'
-        run: flutter build apk --release --target-platform android-arm64,android-arm,android-x64
+        env:
+          NB_ANDROID_KEYSTORE: ${{ secrets.NB_ANDROID_KEYSTORE }}
+          NB_ANDROID_STORE_PASSWORD: ${{ secrets.NB_ANDROID_STORE_PASSWORD }}
+        run: |
+          python tool/sign_android.py
+          flutter build apk --release --target-platform android-arm64,android-arm,android-x64
+          python tool/verify_android.py
       - run: python tool/package.py ${{ matrix.platform }}
       - uses: actions/upload-artifact@v4
         with:

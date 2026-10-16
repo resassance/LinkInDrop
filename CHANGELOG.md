@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0-alpha.1
+
+- Pin a permanent Android signing certificate and verify every release APK; add manual GitHub update checks.
+- Add selected receive directories, Android writable document-tree export, conflict policies and free-space preflight.
+- Report route, latency and connection failures with a redacted diagnostic export.
+- Add queue priority, transfer rates, time estimates, folder progress and configurable bandwidth limits.
+- Support 64-bit file sizes and offsets up to 8 TiB.
+- Verify photo copies with peer-bound receipts and restore them with SHA-256 validation.
+- Retain the Android Flutter engine in the foreground service, optionally recover after boot/update, and show battery/notification status.
+- Save favorite remote folders, recent recipients and repeat actions.
+
 ## 0.2.0-alpha.1
 
 - Resume checked file blocks and persist transfer queues with pause, retry and cancellation.
