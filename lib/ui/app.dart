@@ -430,7 +430,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           OutlinedButton.icon(onPressed: c.busy ? null : _backupFolder, icon: const Icon(Icons.add_photo_alternate_outlined), label: const Text('Выбрать папку с фото')),
           TextButton(onPressed: backup.scanning || !backup.enabled ? null : () => backup.scan(), child: const Text('Проверить сейчас')),
         ]),
-        Text(backup.scanning ? 'Проверяем новые снимки…' : 'Скопировано: ${backup.copied}', style: const TextStyle(color: subdued)),
+        Text(!backup.enabled ? 'Копирование выключено · скопировано: ${backup.copied}' : backup.scanning ? 'Проверяем новые снимки…' : 'Скопировано: ${backup.copied}', style: const TextStyle(color: subdued)),
         if (backup.lastError != null) SelectableText(backup.lastError!, style: const TextStyle(color: Colors.redAccent)),
       ],
     ]));
@@ -562,7 +562,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
 
   Widget _device(Peer peer) {
     final tile = Container(decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _draggingPeer == peer.id || c.selectedPeerId == peer.id ? mint : Colors.transparent)),
+      border: Border.all(color: _draggingPeer == peer.id || c.selectedPeer?.id == peer.id ? mint : Colors.transparent)),
       child: ListTile(onTap: () => c.selectPeer(peer.id),
         leading: Icon(Icons.devices_rounded, color: peer.online ? mint : subdued),
         title: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis),
