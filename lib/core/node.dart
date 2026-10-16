@@ -9,17 +9,25 @@ import 'identity.dart';
 import 'connection_error.dart';
 import 'models.dart';
 import 'shared_files.dart';
+import 'shared_folders.dart';
+import 'access_rules.dart';
+import 'transfer_protocol.dart';
+import 'relay_transport.dart';
+import 'search_service.dart';
+import 'file_preview.dart';
+import 'package:crypto/crypto.dart';
 
 class BridgeNode {
   BridgeNode({required this.directory, required this.name,
     required this.onPairRequest, required this.onClipboard, required this.onActivity,
     required this.onChanged, this.preferredPort = 45831,
-    this.discoveryEnabled = true});
+    this.discoveryEnabled = true, this.folderProvider});
 
   final Directory directory;
   String name;
   final int preferredPort;
   final bool discoveryEnabled;
+  final FolderProvider? folderProvider;
   final Future<bool> Function(String name) onPairRequest;
   final Future<void> Function(ClipboardPayload payload) onClipboard;
   final void Function(Activity activity) onActivity;
@@ -33,6 +41,10 @@ class BridgeNode {
   final Map<String, Future<void>> _routeChecks = {};
   late Identity identity;
   late SharedFiles sharedFiles;
+  late SharedFolders sharedFolders;
+  late AccessRules access;
+  late UploadStore uploads;
+  final SearchService searchService = SearchService();
   bool fileSharingEnabled = false;
   int _downloads = 0;
   HttpServer? _server;
@@ -48,6 +60,10 @@ class BridgeNode {
   double? transferProgress;
   String? transferName;
   final Set<HttpClient> _clients = {};
+  final Map<HttpClient, RelayDialer> _dialers = {};
+  RelayHost? relayHost;
+  String? relayUrl;
+  String? relayRoom;
   HttpClient? _outgoingTransfer;
   bool _transferCancelled = false;
   Future<void> _saveQueue = Future.value();
@@ -60,6 +76,11 @@ class BridgeNode {
     await inbox.create(recursive: true);
     sharedFiles = SharedFiles(directory);
     await sharedFiles.load();
+    sharedFolders = SharedFolders(directory, documents: folderProvider);
+    await sharedFolders.load();
+    access = AccessRules(directory);
+    await access.load();
+    uploads = UploadStore(directory, inbox);
     _localAddresses = await addresses();
     final state = File(p.join(directory.path, 'peers.json'));
     if (await state.exists()) {
@@ -99,6 +120,23 @@ class BridgeNode {
       .where(isConnectionHost).toSet().toList();
   }
 
+  Future<void> configureRelay(String? address) async {
+    if (address != null && !validRelayUrl(address)) throw const FormatException('Нужен адрес wss:// сервера');
+    await relayHost?.close();
+    relayHost = null;
+    relayUrl = address;
+    final file = File(p.join(directory.path, 'relay-room'));
+    if (relayRoom == null) {
+      relayRoom = await file.exists() ? (await file.readAsString()).trim() : randomToken();
+      await file.writeAsString(relayRoom!, flush: true);
+    }
+    if (address != null) {
+      relayHost = RelayHost(url: address, room: relayRoom!, localPort: port, changed: onChanged);
+      await relayHost!.start();
+    }
+    onChanged();
+  }
+
   PairInvite invite(String host) {
     _inviteSecret ??= randomToken();
     if (_inviteExpiry == null || !_inviteExpiry!.isAfter(DateTime.now())) {
@@ -107,7 +145,7 @@ class BridgeNode {
     }
     return PairInvite(id: identity.id, name: name, host: host, port: port,
       fingerprint: identity.fingerprint, secret: _inviteSecret!, expiresAt: _inviteExpiry!,
-      hosts: _localAddresses.take(8).toList());
+      hosts: _localAddresses.take(8).toList(), relayUrl: relayUrl, relayRoom: relayRoom);
   }
 
   void cancelInvite() {
@@ -131,26 +169,38 @@ class BridgeNode {
     onChanged();
   }
 
-  HttpClient _client(String fingerprint) {
+  HttpClient _client(String fingerprint, {bool relay = false, String? relayAddress, String? room, bool direct = false}) {
     final client = HttpClient(context: SecurityContext(withTrustedRoots: false));
     client.connectionTimeout = const Duration(seconds: 8);
     client.findProxy = (_) => 'DIRECT';
     client.badCertificateCallback = (certificate, host, port) =>
       secureEquals(certificateFingerprint(certificate.pem), fingerprint);
+    Peer? peer;
+    for (final value in peers.values) { if (value.fingerprint == fingerprint) { peer = value; break; } }
+    if (relay || (!direct && peer?.activeRelay == true)) {
+      final address = relayAddress ?? peer?.relayUrl;
+      final targetRoom = room ?? peer?.relayRoom;
+      if (address == null || targetRoom == null) throw const SocketException('No relay route');
+      final dialer = RelayDialer(address, targetRoom,
+        acceptCertificate: (certificate) => secureEquals(certificateFingerprint(certificate.pem), fingerprint));
+      _dialers[client] = dialer;
+      client.connectionFactory = dialer.connect;
+    }
     _clients.add(client);
     return client;
   }
 
   Future<Map<String, dynamic>> _jsonRequest({required String host,
     required int port, required String fingerprint, required String endpoint,
-    String? token, Map<String, dynamic>? body,
+    String? token, Map<String, dynamic>? body, Map<String, String>? query,
+    bool relay = false, String? relayAddress, String? room, bool direct = false,
     Set<int> acceptedStatuses = const {200},
     Duration timeout = const Duration(seconds: 15)}) async {
-    final client = _client(fingerprint);
+    final client = _client(fingerprint, relay: relay, relayAddress: relayAddress, room: room, direct: direct);
     try {
       return await (() async {
         final request = await client.openUrl(body == null ? 'GET' : 'POST',
-          Uri(scheme: 'https', host: host, port: port, path: endpoint));
+          Uri(scheme: 'https', host: host, port: port, path: endpoint, queryParameters: query));
         request.followRedirects = false;
         request.headers.set('X-Nearbridge-Id', identity.id);
         if (token != null) request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
@@ -159,7 +209,7 @@ class BridgeNode {
           request.add(utf8.encode(jsonEncode(body)));
         }
         final response = await request.close();
-        final raw = await _readBounded(response, 256 * 1024);
+        final raw = await _readBounded(response, ['/browse', '/search', '/preview'].contains(endpoint) ? 2 * 1024 * 1024 : 256 * 1024);
         final decoded = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
         if (!acceptedStatuses.contains(response.statusCode)) {
           throw RemoteFailure(response.statusCode, decoded['error'] as String? ?? 'Request rejected');
@@ -169,6 +219,7 @@ class BridgeNode {
     } finally {
       client.close(force: true);
       _clients.remove(client);
+      _dialers.remove(client)?.close();
     }
   }
 
@@ -195,12 +246,21 @@ class BridgeNode {
 
   Future<String> _probeInviteRoute(PairInvite invite) async {
     try {
-      return await _firstSuccess({invite.host, ...invite.hosts}.take(8).map((host) => () async {
+      final attempts = {invite.host, ...invite.hosts}.take(8).map((host) => () async {
         await _jsonRequest(host: host, port: invite.port,
-          fingerprint: invite.fingerprint, endpoint: '/ping',
+          fingerprint: invite.fingerprint, endpoint: '/ping', direct: true,
           timeout: const Duration(seconds: 5), acceptedStatuses: const {200, 401});
         return host;
-      }));
+      }).toList();
+      if (invite.relayUrl != null && invite.relayRoom != null) {
+        attempts.add(() async {
+          await _jsonRequest(host: '127.0.0.1', port: invite.port, fingerprint: invite.fingerprint,
+            endpoint: '/ping', acceptedStatuses: const {200, 401}, relay: true,
+            relayAddress: invite.relayUrl, room: invite.relayRoom, timeout: const Duration(seconds: 12));
+          return '@relay';
+        });
+      }
+      return await _firstSuccess(attempts);
     } on SocketException catch (error) {
       throw describePairingFailure(error, '${invite.host}:${invite.port}', waitingForApproval: false);
     } on HandshakeException catch (error) {
@@ -219,7 +279,7 @@ class BridgeNode {
     try {
       await _completePair(PairInvite(id: invite.id, name: invite.name, host: host,
         port: invite.port, fingerprint: invite.fingerprint, secret: invite.secret,
-        expiresAt: invite.expiresAt, hosts: invite.hosts));
+        expiresAt: invite.expiresAt, hosts: invite.hosts, relayUrl: invite.relayUrl, relayRoom: invite.relayRoom));
     } on SocketException catch (error) {
       throw describePairingFailure(error, target, waitingForApproval: false);
     } on HandshakeException catch (error) {
@@ -233,22 +293,25 @@ class BridgeNode {
 
   Future<void> _completePair(PairInvite invite) async {
     final localToken = randomToken();
-    final response = await _jsonRequest(host: invite.host, port: invite.port,
+    final response = await _jsonRequest(host: invite.host == '@relay' ? '127.0.0.1' : invite.host, port: invite.port,
+      relay: invite.host == '@relay', relayAddress: invite.relayUrl, room: invite.relayRoom,
       fingerprint: invite.fingerprint, endpoint: '/pair',
       timeout: const Duration(minutes: 2), body: {
         'v': protocolVersion, 'secret': invite.secret, 'id': identity.id,
         'name': name, 'port': port, 'fingerprint': identity.fingerprint,
         'token': localToken,
         'hosts': _localAddresses,
+        if (relayUrl != null) 'relayUrl': relayUrl, if (relayRoom != null) 'relayRoom': relayRoom,
       });
     if (response['id'] != invite.id || response['token'] is! String ||
         !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(response['token'] as String)) {
       throw const FormatException('Invalid pairing response');
     }
-    peers[invite.id] = Peer(id: invite.id, name: invite.name, host: invite.host,
+    peers[invite.id] = Peer(id: invite.id, name: invite.name, host: invite.host == '@relay' ? '127.0.0.1' : invite.host,
       port: invite.port, fingerprint: invite.fingerprint,
       incomingToken: localToken, outgoingToken: response['token'] as String,
-      additionalHosts: connectionHosts(response['hosts']))..online = true;
+      additionalHosts: connectionHosts(response['hosts']), relayUrl: invite.relayUrl, relayRoom: invite.relayRoom)
+      ..activeRelay = (invite.host == '@relay')..online = true;
     await savePeers();
     onActivity(Activity('Устройство подключено', invite.name));
     onChanged();
@@ -279,9 +342,8 @@ class BridgeNode {
   }
 
   Future<void> _findRoute(Peer peer) async {
-    // Race independently pinned endpoints so a VPN blackhole cannot hold a
-    // healthy LAN route hostage. Never retry a file upload after sending bytes.
     final candidates = <(String, int)>{
+      if (peer.relayUrl != null && peer.relayRoom != null) ('@relay', peer.port),
       if (peer.remoteHost != null) (peer.remoteHost!, peer.remotePort ?? peer.port),
       (peer.host, peer.port),
       for (final host in peer.additionalHosts) (host, peer.port),
@@ -290,14 +352,16 @@ class BridgeNode {
       if (!running || peers[peer.id] != peer) throw StateError('Устройство отключено');
       try {
         final route = await _firstSuccess(candidates.map((route) => () async {
-          final result = await _jsonRequest(host: route.$1, port: route.$2,
+          final result = await _jsonRequest(host: route.$1 == '@relay' ? '127.0.0.1' : route.$1, port: route.$2,
+            direct: route.$1 != '@relay', relay: route.$1 == '@relay', relayAddress: peer.relayUrl, room: peer.relayRoom,
             fingerprint: peer.fingerprint, endpoint: '/ping', token: peer.outgoingToken,
-            timeout: const Duration(seconds: 4));
+            timeout: Duration(seconds: route.$1 == '@relay' ? 12 : 4));
           if (result['id'] != peer.id) throw const FormatException('Device identity mismatch');
           return (route, connectionHosts(result['hosts']));
         }));
         if (peers[peer.id] != peer || !running) throw StateError('Устройство отключено');
-        peer.activeHost = route.$1.$1;
+        peer.activeRelay = route.$1.$1 == '@relay';
+        peer.activeHost = peer.activeRelay ? '127.0.0.1' : route.$1.$1;
         peer.activePort = route.$1.$2;
         final hosts = route.$2;
         if (hosts.isNotEmpty && jsonEncode(hosts) != jsonEncode(peer.additionalHosts)) {
@@ -315,20 +379,19 @@ class BridgeNode {
   }
 
   Future<Map<String, dynamic>> _pairedRequest(Peer peer, String endpoint,
-      {Map<String, dynamic>? body}) async {
+      {Map<String, dynamic>? body, Map<String, String>? query}) async {
     for (var attempt = 0; ; attempt++) {
       await _connectPeer(peer);
       try {
         return await _jsonRequest(host: peer.connectionHost, port: peer.connectionPort,
           fingerprint: peer.fingerprint, endpoint: endpoint,
-          token: peer.outgoingToken, body: body);
+          token: peer.outgoingToken, body: body, query: query,
+          timeout: endpoint.endsWith('/complete') ? const Duration(minutes: 2) : const Duration(seconds: 15));
       } on SocketException {
         if (attempt != 0) rethrow;
       } on TimeoutException {
         if (attempt != 0) rethrow;
       }
-      // Only reads and clipboard messages (deduplicated by payload ID) use this
-      // helper. Repeating a pairing request or upload could produce duplicates.
     }
   }
 
@@ -385,6 +448,7 @@ class BridgeNode {
     } finally {
       client.close(force: true);
       _clients.remove(client);
+      _dialers.remove(client)?.close();
       _outgoingTransfer = null;
       transferName = null;
       transferProgress = null;
@@ -402,14 +466,14 @@ class BridgeNode {
       if (!isConnectionHost(host) || port == null || port < 1 || port > 65535) {
         throw const FormatException('Введите IPv4/DNS-адрес и порт 1–65535');
       }
-      // Verify TLS, token and device identity before persisting the endpoint.
       final result = await _jsonRequest(host: host, port: port,
-        fingerprint: peer.fingerprint, endpoint: '/ping', token: peer.outgoingToken);
+        fingerprint: peer.fingerprint, endpoint: '/ping', token: peer.outgoingToken, direct: true);
       if (result['id'] != peer.id) throw StateError('Адрес принадлежит другому устройству');
     }
     if (peers[peer.id] != peer) throw StateError('Устройство уже отключено');
     peer.remoteHost = host;
     peer.remotePort = host == null ? null : port;
+    peer.activeRelay = false;
     peer.activeHost = host;
     peer.activePort = host == null ? null : port;
     peer.online = host != null;
@@ -427,11 +491,46 @@ class BridgeNode {
     return entries.map((entry) => SharedFile.fromJson(entry as Map<String, dynamic>)).toList();
   }
 
-  Future<void> downloadFile(Peer peer, SharedFile entry) async {
+  Future<SharedPage> browseFiles(Peer peer, {SharedFile? folder, int offset = 0}) async {
+    if (offset < 0 || offset > 100000 ||
+        (folder != null && (!folder.isDirectory || folder.folderId == null))) {
+      throw const FormatException('Invalid directory request');
+    }
+    if (folder != null) SharedFile.fromJson(folder.toJson());
+    try {
+      return SharedPage.fromJson(await _pairedRequest(peer, '/browse', query: {
+        if (folder != null) 'folder': folder.folderId!,
+        if (folder != null) 'path': folder.relativePath!,
+        'offset': '$offset',
+      }));
+    } on RemoteFailure catch (error) {
+      if (error.status != 404 || folder != null || offset != 0) rethrow;
+      return SharedPage(await listFiles(peer));
+    }
+  }
+
+  Future<SharedPage> searchFiles(Peer peer, String query, {SharedFile? folder, String? cursor}) async {
+    return SharedPage.fromJson(await _pairedRequest(peer, '/search', query: {
+      'q': query, if (cursor != null) 'cursor': cursor,
+      if (folder != null) 'folder': folder.folderId!,
+      if (folder != null) 'path': folder.relativePath!,
+    }));
+  }
+
+  Future<Map<String, dynamic>> previewFile(Peer peer, SharedFile entry) async {
+    SharedFile.fromJson(entry.toJson());
+    return _pairedRequest(peer, '/preview', query: {
+      'id': entry.id, if (entry.folderId != null) 'folder': entry.folderId!,
+      if (entry.relativePath != null) 'path': entry.relativePath!,
+    });
+  }
+
+  Future<void> downloadFile(Peer peer, SharedFile entry, {String? relative, String? transferId}) async {
+    final id = transferId ?? randomToken(16);
     _transferCancelled = false;
     for (var attempt = 0; ; attempt++) {
       try {
-        await _downloadFile(peer, entry);
+        await _downloadFile(peer, entry, id, relative);
         return;
       } on SocketException {
         if (attempt != 0 || _transferCancelled) rethrow;
@@ -447,60 +546,230 @@ class BridgeNode {
     }
   }
 
-  Future<void> _downloadFile(Peer peer, SharedFile entry) async {
+  Future<void> _downloadFile(Peer peer, SharedFile entry, String id, String? relative) async {
     if (!receivingEnabled) throw StateError('Включите приём файлов');
     if (transferName != null) throw StateError('Дождитесь текущей передачи');
-    // Validate even entries constructed by callers; the ID is a single segment.
+    if (!RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(id)) throw const FormatException('Invalid transfer ID');
     SharedFile.fromJson(entry.toJson());
-    final client = _client(peer.fingerprint);
-    _outgoingTransfer = client;
+    if (entry.isDirectory) throw StateError('Выберите файл внутри папки');
+    final state = await Directory(p.join(directory.path, 'partial')).create(recursive: true);
+    final part = File(p.join(state.path, '$id.part'));
+    final metaFile = File(p.join(state.path, '$id.json'));
+    final Map<String, dynamic> meta = await metaFile.exists()
+      ? jsonDecode(await metaFile.readAsString()) as Map<String, dynamic> : {
+        'peer': peer.id, 'resource': jsonEncode(entry.toJson()),
+        'relative': relative ?? '${randomToken(8)}_${safeFilename(entry.name)}', 'offset': 0,
+      };
+    if (meta['peer'] != peer.id || meta['resource'] != jsonEncode(entry.toJson())) {
+      throw const FormatException('Transfer source changed');
+    }
+    Future<void> save() async {
+      final next = File('${metaFile.path}.new');
+      await next.writeAsString(jsonEncode(meta), flush: true);
+      await next.rename(metaFile.path);
+    }
+    final output = File(p.joinAll([inbox.path, ...portablePath(meta['relative'] as String).split('/')]));
+    if (meta['done'] == true && await output.exists()) return;
+    if (meta['finalizing'] == true && await output.exists()) {
+      if ((await sha256.bind(output.openRead()).first).toString() != meta['digest']) {
+        throw const FileSystemException('Completed download was changed');
+      }
+      meta['done'] = true;
+      await save();
+      return;
+    }
+    if (!await part.exists()) await part.writeAsBytes([]);
+    var offset = meta['offset'] as int? ?? 0;
+    final existing = await part.length();
+    if (existing < offset) offset = (existing ~/ transferBlockBytes) * transferBlockBytes;
+    final handle = await part.open(mode: FileMode.append);
+    await handle.truncate(offset);
+    await handle.close();
     transferName = entry.name;
     transferProgress = 0;
-    final id = randomToken(8);
-    final temporary = File(p.join(inbox.path, '.$id.part'));
-    final output = File(p.join(inbox.path, '${id}_${safeFilename(entry.name)}'));
-    IOSink? sink;
     onChanged();
+    HttpClient? client;
     try {
-      await _connectPeer(peer);
-      final request = await client.getUrl(Uri(scheme: 'https', host: peer.connectionHost,
-        port: peer.connectionPort, path: '/files/${entry.id}'))
-        .timeout(const Duration(seconds: 15));
-      request.followRedirects = false;
-      request.headers.set('X-Nearbridge-Id', identity.id);
-      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
-      final response = await request.close().timeout(const Duration(seconds: 30));
-      if (response.statusCode != 200) {
-        throw RemoteFailure(response.statusCode, 'Не удалось получить файл. Обновите список.');
-      }
-      final size = response.contentLength;
-      if (size < 0 || size > maxFileBytes) throw const FormatException('Invalid file length');
-      // The file may have changed since listing; use the length of this response.
-      var received = 0;
-      sink = temporary.openWrite();
-      await sink.addStream(response.timeout(const Duration(seconds: 30)).map((chunk) {
-        received += chunk.length;
-        if (received > size) throw const FormatException('File length mismatch');
-        transferProgress = size == 0 ? 1 : received / size;
+      var resets = 0;
+      while (true) {
+        if (_transferCancelled) throw const TransferStopped();
+        await _connectPeer(peer);
+        client ??= _client(peer.fingerprint);
+        _outgoingTransfer = client;
+        final request = await client.getUrl(Uri(scheme: 'https', host: peer.connectionHost,
+          port: peer.connectionPort, path: entry.folderId == null ? '/files/${entry.id}' : '/browse/file',
+          queryParameters: entry.folderId == null ? null : {'folder': entry.folderId!, 'path': entry.relativePath!}))
+          .timeout(const Duration(seconds: 15));
+        request.followRedirects = false;
+        request.headers.set('X-Nearbridge-Id', identity.id);
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
+        request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-${offset + transferBlockBytes - 1}');
+        if (meta['etag'] != null) request.headers.set(HttpHeaders.ifMatchHeader, meta['etag']);
+        final response = await request.close().timeout(const Duration(minutes: 2));
+        if (response.statusCode == 412 && resets++ == 0) {
+          await response.drain<void>();
+          await part.writeAsBytes([]);
+          offset = 0;
+          meta.remove('etag');
+          meta['offset'] = 0;
+          await save();
+          continue;
+        }
+        if (response.statusCode != 200 && response.statusCode != 206) {
+          throw RemoteFailure(response.statusCode, 'Не удалось получить файл. Обновите список.');
+        }
+        final etag = response.headers.value(HttpHeaders.etagHeader);
+        if (response.statusCode == 200) {
+          final total = response.contentLength;
+          if (total < 0 || total > maxFileBytes) throw const FormatException('Invalid file length');
+          offset = 0;
+          final sink = part.openWrite();
+          try {
+            await sink.addStream(response.timeout(const Duration(seconds: 30)).map((chunk) {
+              if (_transferCancelled) throw const TransferStopped();
+              offset += chunk.length;
+              if (offset > total) throw const FormatException('Invalid file length');
+              transferProgress = total == 0 ? 1 : offset / total;
+              onChanged();
+              return chunk;
+            }));
+            await sink.flush();
+          } finally { await sink.close(); }
+          if (offset != total) throw const FormatException('Incomplete file');
+          meta['offset'] = offset;
+          meta['etag'] = etag;
+          await save();
+          break;
+        }
+        final range = response.headers.value(HttpHeaders.contentRangeHeader) ?? '';
+        final match = RegExp(r'^bytes ([0-9]+)-([0-9]+)/([0-9]+)$').firstMatch(range);
+        if (match == null || int.parse(match[1]!) != offset || etag == null) {
+          throw const FormatException('Invalid range response');
+        }
+        final total = int.parse(match[3]!);
+        final end = int.parse(match[2]!);
+        if (total > maxFileBytes || end < offset || end >= total || end - offset + 1 > transferBlockBytes) {
+          throw const FormatException('Invalid range length');
+        }
+        final bytes = await _readBounded(response, transferBlockBytes);
+        if (bytes.length != end - offset + 1 || !secureEquals(
+            sha256.convert(bytes).toString(), response.headers.value('X-Nearbridge-SHA256') ?? '')) {
+          throw const FormatException('Block checksum mismatch');
+        }
+        if (_transferCancelled) throw const TransferStopped();
+        final sink = await part.open(mode: FileMode.append);
+        try { await sink.writeFrom(bytes); await sink.flush(); } finally { await sink.close(); }
+        offset += bytes.length;
+        meta['offset'] = offset;
+        meta['etag'] = etag;
+        await save();
+        transferProgress = offset / total;
         onChanged();
-        return chunk;
-      }));
-      await sink.flush();
-      await sink.close();
-      sink = null;
-      if (received != size) throw const FormatException('Incomplete file');
-      await temporary.rename(output.path);
-      onActivity(Activity('Файл получен', '${entry.name} · ${peer.name}', path: output.path));
+        if (offset == total) break;
+      }
+      if (_transferCancelled) throw const TransferStopped();
+      meta['digest'] = (await sha256.bind(part.openRead()).first).toString();
+      meta['finalizing'] = true;
+      await save();
+      final destination = await inboxDestination(inbox, meta['relative'] as String);
+      await part.rename(destination.path);
+      meta['done'] = true;
+      meta.remove('finalizing');
+      await save();
+      onActivity(Activity('Файл получен', '${entry.name} · ${peer.name}', path: destination.path));
     } finally {
-      client.close(force: true);
-      _clients.remove(client);
-      try { await sink?.close(); } catch (_) {}
-      if (await temporary.exists()) await temporary.delete();
+      client?.close(force: true);
+      if (client != null) _clients.remove(client);
+      _dialers.remove(client)?.close();
       _outgoingTransfer = null;
       transferName = null;
       transferProgress = null;
       onChanged();
     }
+  }
+
+  Future<void> discardDownload(String id) async {
+    if (!RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(id)) return;
+    for (final suffix in ['part', 'json', 'json.new']) {
+      final file = File(p.join(directory.path, 'partial', '$id.$suffix'));
+      if (await file.exists()) await file.delete();
+    }
+  }
+
+  Future<void> uploadDirectory(Peer peer, String relative) async {
+    await _pairedRequest(peer, '/uploads/mkdir', body: {'relative': relative});
+  }
+
+  Future<void> cancelUpload(Peer peer, String id) async {
+    await _pairedRequest(peer, '/uploads/$id/cancel', body: {});
+  }
+
+  Future<String> uploadSource(Peer peer, String id, String filename,
+      Future<SharedRead> Function(int offset, int? length) open,
+      {String? relative, String? expectedDigest, void Function(String)? onDigest}) async {
+    if (transferName != null) throw StateError('Дождитесь текущей передачи');
+    _transferCancelled = false;
+    transferName = filename;
+    transferProgress = 0;
+    onChanged();
+    try {
+      final original = await open(0, null);
+      late String digest;
+      final version = original.version;
+      final total = original.size;
+      try {
+        if (total < 0 || total > maxFileBytes) throw StateError('Лимит файла — 2 ГБ');
+        digest = (await sha256.bind(original.stream.map((chunk) {
+          if (_transferCancelled) throw const TransferStopped();
+          return chunk;
+        })).first).toString();
+      } finally { await original.close(); }
+      if (expectedDigest != null && expectedDigest != digest) throw StateError('Исходный файл изменился. Добавьте его заново.');
+      onDigest?.call(digest);
+      var status = await _pairedRequest(peer, '/uploads', body: {'id': id, 'name': filename,
+        'size': total, 'sha256': digest, if (relative != null) 'relative': relative});
+      var offset = status['offset'] as int;
+      if (offset < 0 || offset > total) throw const FormatException('Invalid upload offset');
+      while (offset < total) {
+        if (_transferCancelled) throw const TransferStopped();
+        final source = await open(offset, transferBlockBytes);
+        late Uint8List bytes;
+        try {
+          if (source.size != total || (version != null && source.version != version)) {
+            throw StateError('Исходный файл изменился');
+          }
+          bytes = await _readBounded(source.stream, transferBlockBytes);
+        } finally { await source.close(); }
+        if (bytes.isEmpty) throw const FormatException('Incomplete source');
+        await _connectPeer(peer);
+        final client = _client(peer.fingerprint);
+        _outgoingTransfer = client;
+        try {
+          final request = await client.postUrl(Uri(scheme: 'https', host: peer.connectionHost,
+            port: peer.connectionPort, path: '/uploads/$id/block', queryParameters: {'offset': '$offset'}));
+          request.followRedirects = false;
+          request.headers.set('X-Nearbridge-Id', identity.id);
+          request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
+          request.headers.set('X-Nearbridge-SHA256', sha256.convert(bytes).toString());
+          request.contentLength = bytes.length;
+          request.add(bytes);
+          final response = await request.close().timeout(const Duration(seconds: 45));
+          final result = jsonDecode(utf8.decode(await _readBounded(response, 65536))) as Map<String, dynamic>;
+          if (response.statusCode != 200) throw RemoteFailure(response.statusCode, result['error'] as String? ?? 'Upload failed');
+          final next = result['offset'];
+          if (next is! int || next <= offset || next > total) throw const FormatException('Invalid upload acknowledgement');
+          offset = next;
+        } finally { client.close(force: true); _clients.remove(client);
+      _dialers.remove(client)?.close(); _outgoingTransfer = null; }
+        transferProgress = total == 0 ? 1 : offset / total;
+        onChanged();
+      }
+      if (_transferCancelled) throw const TransferStopped();
+      status = await _pairedRequest(peer, '/uploads/$id/complete', body: {});
+      if (status['sha256'] != digest) throw const FormatException('Upload checksum mismatch');
+      onActivity(Activity('Файл отправлен', '$filename → ${peer.name}'));
+      return digest;
+    } finally { transferName = null; transferProgress = null; onChanged(); }
   }
 
   static Future<Uint8List> _readBounded(Stream<List<int>> stream, int limit) async {
@@ -532,14 +801,27 @@ class BridgeNode {
         return;
       }
       peer.online = true;
+      if (request.method == 'POST' && request.uri.path.startsWith('/uploads')) {
+        await _acceptUpload(request, peer);
+        return;
+      }
+      if (request.method == 'GET' && (request.uri.path == '/search' || request.uri.path == '/preview')) {
+        await _serveTools(request, peer);
+        return;
+      }
       if (request.method == 'GET' &&
           (request.uri.path == '/files' || request.uri.path.startsWith('/files/'))) {
         await _serveSharedFiles(request, peer);
         return;
       }
+      if (request.method == 'GET' &&
+          (request.uri.path == '/browse' || request.uri.path == '/browse/file')) {
+        await _serveFolders(request, peer);
+        return;
+      }
       switch ((request.method, request.uri.path)) {
         case ('GET', '/ping'):
-          _respond(request, 200, {'v': protocolVersion, 'id': identity.id, 'hosts': _localAddresses});
+          _respond(request, 200, {'v': protocolVersion, 'id': identity.id, 'hosts': _localAddresses, 'features': ['blocks', 'search', 'preview', 'relay']});
         case ('POST', '/clipboard'):
           if (!clipboardReceivingEnabled || !peer.clipboardEnabled) {
             _respond(request, 403, {'error': 'Clipboard disabled'});
@@ -558,7 +840,7 @@ class BridgeNode {
             '${payload.type == 'png' ? 'Изображение' : 'Текст'} · ${peer.name}'));
           _respond(request, 200, {'ok': true});
         case ('POST', '/file'):
-          if (!receivingEnabled) {
+          if (!receivingEnabled || !peer.incomingFilesEnabled) {
             _respond(request, 403, {'error': 'Receiving disabled'});
             return;
           }
@@ -566,6 +848,8 @@ class BridgeNode {
         default:
           _respond(request, 404, {'error': 'Not found'});
       }
+    } on FileSystemException {
+      _respond(request, 404, {'error': 'Папка или файл недоступны. Обновите список.'});
     } on FormatException {
       _respond(request, 400, {'error': 'Invalid payload'});
     } on TimeoutException {
@@ -617,11 +901,14 @@ class BridgeNode {
         host: remote, port: body['port'] as int,
         fingerprint: body['fingerprint'] as String,
         incomingToken: token, outgoingToken: body['token'] as String,
-        additionalHosts: connectionHosts(body['hosts']))..online = true;
+        additionalHosts: connectionHosts(body['hosts']),
+        relayUrl: body['relayUrl'] is String && validRelayUrl(body['relayUrl'] as String) ? body['relayUrl'] as String : null,
+        relayRoom: body['relayRoom'] is String && RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(body['relayRoom'] as String) ? body['relayRoom'] as String : null)..online = true;
       peers[peer.id] = peer;
       await savePeers();
       cancelInvite();
-      _respond(request, 200, {'id': identity.id, 'token': token, 'hosts': _localAddresses});
+      _pairAttempts.remove(remote);
+      _respond(request, 200, {'id': identity.id, 'token': token, 'hosts': _localAddresses, 'relayUrl': relayUrl, 'relayRoom': relayRoom});
       onActivity(Activity('Устройство подключено', peer.name));
     } finally {
       _pairing = false;
@@ -629,50 +916,170 @@ class BridgeNode {
   }
 
   Future<void> _serveSharedFiles(HttpRequest request, Peer peer) async {
-    if (!fileSharingEnabled) {
-      _respond(request, 403, {'error': 'Владелец не включил доступ к файлам'});
-      return;
-    }
+    if (!fileSharingEnabled) { _respond(request, 403, {'error': 'Владелец не включил доступ к файлам'}); return; }
     if (request.uri.path == '/files') {
-      _respond(request, 200, {'files': (await sharedFiles.list()).map((e) => e.toJson()).toList()});
+      _respond(request, 200, {'files': (await sharedFiles.list()).where((e) => access.allows(e.id, peer.id)).map((e) => e.toJson()).toList()});
       return;
     }
     final parts = request.uri.pathSegments;
     if (parts.length != 2 || !RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(parts[1])) {
-      _respond(request, 404, {'error': 'File not shared'});
-      return;
+      _respond(request, 404, {'error': 'File not shared'}); return;
     }
-    if (_downloads >= 2) {
-      _respond(request, 429, {'error': 'Receiver busy'});
-      return;
+    if (!access.allows(parts[1], peer.id)) { _respond(request, 403, {'error': 'Доступ к файлу закрыт'}); return; }
+    final file = await sharedFiles.resolve(parts[1]);
+    if (file == null) { _respond(request, 404, {'error': 'File not shared'}); return; }
+    await _serveSource(request, peer, p.basename(file.path), (offset, length) async {
+      final stat = await file.stat();
+      if (offset > stat.size) throw const FileSystemException('Source changed');
+      final end = length == null ? stat.size : (offset + length < stat.size ? offset + length : stat.size);
+      return SharedRead(stat.size, file.openRead(offset, end), () async {}, version: contentVersion(stat.size, stat.modified));
+    });
+  }
+
+  Future<void> _serveSource(HttpRequest request, Peer peer, String name,
+      Future<SharedRead> Function(int offset, int? length) open) async {
+    if (_downloads >= 2) { _respond(request, 429, {'error': 'Receiver busy'}); return; }
+    final header = request.headers.value(HttpHeaders.rangeHeader);
+    final match = header == null ? null : RegExp(r'^bytes=([0-9]+)-([0-9]*)$').firstMatch(header);
+    if (header != null && match == null) { _respond(request, 416, {'error': 'Invalid range'}); return; }
+    final offset = match == null ? 0 : int.parse(match[1]!);
+    final end = match == null || match[2]!.isEmpty ? offset + transferBlockBytes - 1 : int.parse(match[2]!);
+    if (header != null && (end < offset || end - offset + 1 > transferBlockBytes)) {
+      _respond(request, 416, {'error': 'Invalid range'}); return;
     }
     _downloads++;
+    SharedRead? source;
     try {
-      final file = await sharedFiles.resolve(parts[1]);
-      if (file == null) {
-        _respond(request, 404, {'error': 'File not shared'});
-        return;
-      }
-      final size = await file.length();
-      if (size > maxFileBytes) {
-        _respond(request, 413, {'error': 'File too large'});
-        return;
+      source = await open(offset, header == null ? null : end - offset + 1);
+      if (source.size < 0 || source.size > maxFileBytes) throw const FormatException('Invalid file size');
+      final etag = '"${source.version ?? source.size}"';
+      request.response.headers.set(HttpHeaders.etagHeader, etag);
+      request.response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
+      request.response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
+      if (request.headers.value(HttpHeaders.ifMatchHeader) != null && request.headers.value(HttpHeaders.ifMatchHeader) != etag) {
+        _respond(request, 412, {'error': 'File changed'}); return;
       }
       request.response.headers.contentType = ContentType.binary;
-      request.response.contentLength = size;
-      request.response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
-      try {
-        await request.response.addStream(file.openRead(0, size))
-          .timeout(const Duration(minutes: 30));
-        onActivity(Activity('Файл скачан устройством', '${p.basename(file.path)} · ${peer.name}'));
-      } catch (error) {
-        // Headers may already be on the wire; do not append JSON to a file.
-        onActivity(Activity('Скачивание прервано', '$error', error: true));
-        try { await request.response.close(); } catch (_) {}
+      if (header != null && source.size > 0) {
+        if (offset >= source.size) { _respond(request, 416, {'error': 'Invalid range'}); return; }
+        final bytes = await _readBounded(source.stream, transferBlockBytes);
+        if (bytes.isEmpty) throw const FormatException('Incomplete source');
+        request.response.statusCode = 206;
+        request.response.headers.set(HttpHeaders.contentRangeHeader, 'bytes $offset-${offset + bytes.length - 1}/${source.size}');
+        request.response.headers.set('X-Nearbridge-SHA256', sha256.convert(bytes).toString());
+        request.response.contentLength = bytes.length;
+        request.response.add(bytes);
+      } else {
+        request.response.contentLength = source.size;
+        try { await request.response.addStream(source.stream).timeout(const Duration(minutes: 30)); }
+        catch (error) { onActivity(Activity('Скачивание прервано', '$error', error: true)); }
       }
     } finally {
-      _downloads--;
+      try { await source?.close(); } catch (_) {} finally { _downloads--; }
     }
+  }
+
+  Future<void> _acceptUpload(HttpRequest request, Peer peer) async {
+    if (!receivingEnabled || !peer.incomingFilesEnabled) {
+      _respond(request, 403, {'error': 'Приём файлов от этого устройства отключён'}); return;
+    }
+    final parts = request.uri.pathSegments;
+    Map<String, dynamic> result;
+    if (parts.length == 2 && parts[1] == 'mkdir') {
+      final body = jsonDecode(utf8.decode(await _readBounded(request, 8192))) as Map<String, dynamic>;
+      if (body['relative'] is! String) throw const FormatException('Missing directory');
+      await inboxDirectory(inbox, body['relative'] as String);
+      result = {'ok': true};
+    } else if (parts.length == 1 && parts[0] == 'uploads') {
+      final body = jsonDecode(utf8.decode(await _readBounded(request, 16384))) as Map<String, dynamic>;
+      result = await uploads.start(peer.id, body);
+    } else if (parts.length == 3 && parts[2] == 'block') {
+      final offset = int.tryParse(request.uri.queryParameters['offset'] ?? '');
+      if (offset == null) throw const FormatException('Missing offset');
+      result = await uploads.block(peer.id, parts[1], offset, await _readBounded(request, transferBlockBytes),
+        request.headers.value('X-Nearbridge-SHA256') ?? '');
+    } else if (parts.length == 3 && parts[2] == 'complete') {
+      await _readBounded(request, 8192);
+      result = await uploads.complete(peer.id, parts[1]);
+      final path = result.remove('path') as String?;
+      if (path != null) onActivity(Activity('Файл получен', '${p.basename(path)} · ${peer.name}', path: path));
+    } else if (parts.length == 3 && parts[2] == 'cancel') {
+      await _readBounded(request, 8192);
+      await uploads.cancel(peer.id, parts[1]);
+      result = {'ok': true};
+    } else { _respond(request, 404, {'error': 'Not found'}); return; }
+    _respond(request, 200, result);
+  }
+
+  Future<void> _serveFolders(HttpRequest request, Peer peer) async {
+    request.response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
+    if (!fileSharingEnabled) {
+      _respond(request, 403, {'error': 'Владелец не включил доступ к файлам и папкам'});
+      return;
+    }
+    final query = request.uri.queryParameters;
+    final id = query['folder'];
+    final path = query['path'] ?? '';
+    final offset = int.tryParse(query['offset'] ?? '0');
+    if (offset == null || offset < 0 || offset > 100000 || !isSharedPath(path) ||
+        (id != null && !RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(id))) {
+      throw const FormatException('Invalid directory request');
+    }
+    if (request.uri.path == '/browse') {
+      if (id == null) {
+        if (path.isNotEmpty) throw const FormatException('Missing folder');
+        final entries = [...sharedFolders.roots(), ...await sharedFiles.list()].where((e) => access.allows(e.id, peer.id)).toList();
+        final page = entries.skip(offset).take(200).toList();
+        _respond(request, 200, SharedPage(page,
+          nextOffset: entries.length > offset + 200 ? offset + 200 : null).toJson());
+      } else {
+        if (!access.allows(id, peer.id)) { _respond(request, 403, {'error': 'Доступ к папке закрыт'}); return; }
+        _respond(request, 200, (await sharedFolders.list(id, path, offset: offset)).toJson());
+      }
+      return;
+    }
+    if (id == null || path.isEmpty) throw const FormatException('Missing file path');
+    if (!access.allows(id, peer.id)) { _respond(request, 403, {'error': 'Доступ к папке закрыт'}); return; }
+    await _serveSource(request, peer, safeFilename(path),
+      (offset, length) => sharedFolders.open(id, path, offset: offset, length: length));
+  }
+
+  Future<void> _serveTools(HttpRequest request, Peer peer) async {
+    if (!fileSharingEnabled) { _respond(request, 403, {'error': 'Доступ к файлам отключён'}); return; }
+    final query = request.uri.queryParameters;
+    final folder = query['folder'];
+    final path = query['path'] ?? '';
+    if (!isSharedPath(path)) throw const FormatException('Invalid path');
+    if (request.uri.path == '/search') {
+      if (folder != null && !access.allows(folder, peer.id)) { _respond(request, 403, {'error': 'Доступ закрыт'}); return; }
+      final page = await searchService.search(peer: peer.id, query: query['q'] ?? '', cursor: query['cursor'],
+        folder: folder == null ? null : SharedFile(id: folder, folderId: folder, relativePath: path, name: 'Папка', size: 0, isDirectory: true),
+        roots: () async => [...sharedFolders.roots(), ...await sharedFiles.list()].where((e) => access.allows(e.id, peer.id)).toList(),
+        list: (directory, offset) async {
+          if (!access.allows(directory.id, peer.id)) throw SearchAccessDenied();
+          try { return await sharedFolders.list(directory.id, directory.relativePath!, offset: offset); }
+          on FileSystemException { throw SearchAccessDenied(); }
+        });
+      _respond(request, 200, SharedPage(page.entries.where((e) => access.allows(e.id, peer.id)).toList(), cursor: page.cursor).toJson());
+      return;
+    }
+    final id = folder ?? query['id'] ?? '';
+    if (!access.allows(id, peer.id)) { _respond(request, 403, {'error': 'Доступ закрыт'}); return; }
+    SharedRead? source;
+    try {
+      String name;
+      if (folder != null) {
+        source = await sharedFolders.open(folder, path);
+        name = safeFilename(path);
+      } else {
+        final file = await sharedFiles.resolve(id);
+        if (file == null) throw const FileSystemException('File unavailable');
+        final stat = await file.stat();
+        source = SharedRead(stat.size, file.openRead(), () async {});
+        name = p.basename(file.path);
+      }
+      _respond(request, 200, await FilePreview.create(name, source));
+    } finally { try { await source?.close(); } catch (_) {} }
   }
 
   Future<void> _acceptFile(HttpRequest request, Peer peer) async {
@@ -768,6 +1175,10 @@ class BridgeNode {
   }
 
   Future<void> stop() async {
+    await relayHost?.close();
+    relayHost = null;
+    for (final dialer in _dialers.values.toList()) { dialer.close(); }
+    _dialers.clear();
     _healthTimer?.cancel();
     _discoveryTimer?.cancel();
     _discovery?.close();

@@ -30,6 +30,8 @@ void main() {
     await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
     await tester.scrollUntilVisible(find.text('Не получилось'), 300,
       scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(find.text('Не получилось'));
+    await tester.pumpAndSettle();
     expect(find.textContaining('Нет соединения с 192.168.31.45:45831'), findsOneWidget);
     await tester.tap(find.text('Не получилось'));
     await tester.pumpAndSettle();

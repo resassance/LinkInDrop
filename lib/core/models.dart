@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'relay_transport.dart';
 
 const protocolVersion = 1;
 const maxClipboardBytes = 8 * 1024 * 1024;
@@ -51,8 +52,6 @@ bool isLocalAddress(String host) {
       (b[0] == 192 && b[1] == 168) || (b[0] == 169 && b[1] == 254);
 }
 
-// VPNs such as Tailscale use 100.64.0.0/10. Keep discovery LAN-only,
-// but allow a user-provided VPN/public IPv4 address or DNS endpoint.
 bool isConnectionHost(String host) {
   if (host.isEmpty || host.length > 253 || host != host.trim()) return false;
   final address = InternetAddress.tryParse(host);
@@ -69,7 +68,7 @@ bool isConnectionHost(String host) {
 class PairInvite {
   PairInvite({required this.id, required this.name, required this.host,
     required this.port, required this.fingerprint, required this.secret,
-    required this.expiresAt, this.hosts = const []});
+    required this.expiresAt, this.hosts = const [], this.relayUrl, this.relayRoom});
 
   final String id;
   final String name;
@@ -79,12 +78,14 @@ class PairInvite {
   final String secret;
   final DateTime expiresAt;
   final List<String> hosts;
+  final String? relayUrl;
+  final String? relayRoom;
 
   String encode() => 'nearbridge://pair/${base64Url.encode(utf8.encode(jsonEncode({
     'v': protocolVersion, 'id': id, 'name': name, 'host': host, 'port': port,
     'fingerprint': fingerprint, 'secret': secret,
     'expires': expiresAt.millisecondsSinceEpoch,
-    'hosts': hosts,
+    'hosts': hosts, if (relayUrl != null) 'relayUrl': relayUrl, if (relayRoom != null) 'relayRoom': relayRoom,
   }))).replaceAll('=', '')}';
 
   static PairInvite parse(String value) {
@@ -104,6 +105,11 @@ class PairInvite {
         !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(data['secret'] as String)) {
       throw const FormatException('Неверный код подключения');
     }
+    if ((data['relayUrl'] != null || data['relayRoom'] != null) &&
+        (data['relayUrl'] is! String || !validRelayUrl(data['relayUrl'] as String) ||
+        data['relayRoom'] is! String || !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(data['relayRoom'] as String))) {
+      throw const FormatException('Invalid relay address');
+    }
     final expires = DateTime.fromMillisecondsSinceEpoch(data['expires'] as int);
     if (!expires.isAfter(DateTime.now())) {
       throw const FormatException('Код истёк. Создайте новый');
@@ -112,7 +118,7 @@ class PairInvite {
       host: data['host'] as String, port: data['port'] as int,
       fingerprint: data['fingerprint'] as String, secret: data['secret'] as String,
       expiresAt: expires,
-      hosts: connectionHosts(data['hosts']));
+      hosts: connectionHosts(data['hosts']), relayUrl: data['relayUrl'] as String?, relayRoom: data['relayRoom'] as String?);
   }
 }
 
@@ -120,7 +126,8 @@ class Peer {
   Peer({required this.id, required this.name, required this.host,
     required this.port, required this.fingerprint, required this.incomingToken,
     required this.outgoingToken, this.clipboardEnabled = true,
-    this.remoteHost, this.remotePort, List<String>? additionalHosts})
+    this.remoteHost, this.remotePort, this.incomingFilesEnabled = true,
+    this.relayUrl, this.relayRoom, List<String>? additionalHosts})
     : additionalHosts = additionalHosts ?? [];
 
   final String id;
@@ -133,6 +140,10 @@ class Peer {
   bool clipboardEnabled;
   String? remoteHost;
   int? remotePort;
+  bool incomingFilesEnabled;
+  String? relayUrl;
+  String? relayRoom;
+  bool activeRelay = false;
   List<String> additionalHosts;
   String? activeHost;
   int? activePort;
@@ -144,6 +155,7 @@ class Peer {
     'port': port, 'fingerprint': fingerprint, 'incomingToken': incomingToken,
     'outgoingToken': outgoingToken, 'clipboardEnabled': clipboardEnabled,
     'remoteHost': remoteHost, 'remotePort': remotePort,
+    'incomingFilesEnabled': incomingFilesEnabled, 'relayUrl': relayUrl, 'relayRoom': relayRoom,
     'additionalHosts': additionalHosts};
 
   factory Peer.fromJson(Map<String, dynamic> data) => Peer(
@@ -154,6 +166,8 @@ class Peer {
     outgoingToken: data['outgoingToken'] as String,
     clipboardEnabled: data['clipboardEnabled'] as bool? ?? true,
     remoteHost: data['remoteHost'] as String?, remotePort: data['remotePort'] as int?,
+    incomingFilesEnabled: data['incomingFilesEnabled'] as bool? ?? true,
+    relayUrl: data['relayUrl'] as String?, relayRoom: data['relayRoom'] as String?,
     additionalHosts: connectionHosts(data['additionalHosts']));
 }
 
@@ -161,21 +175,74 @@ List<String> connectionHosts(dynamic value) => value is List
   ? value.whereType<String>().where(isConnectionHost).toSet().take(8).toList() : [];
 
 class SharedFile {
-  const SharedFile({required this.id, required this.name, required this.size});
+  const SharedFile({required this.id, required this.name, required this.size,
+    this.folderId, this.relativePath, this.isDirectory = false, this.version,
+    this.modifiedAt, this.rootName});
   final String id;
   final String name;
   final int size;
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'size': size};
+  final String? folderId;
+  final String? relativePath;
+  final bool isDirectory;
+  final String? version;
+  final DateTime? modifiedAt;
+  final String? rootName;
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'size': size,
+    if (folderId != null) 'folderId': folderId,
+    if (relativePath != null) 'relativePath': relativePath,
+    if (isDirectory) 'directory': true,
+    if (version != null) 'version': version,
+    if (modifiedAt != null) 'modified': modifiedAt!.millisecondsSinceEpoch,
+    if (rootName != null) 'rootName': rootName};
   factory SharedFile.fromJson(Map<String, dynamic> value) {
     if (value['id'] is! String ||
         !RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(value['id'] as String) ||
         value['name'] is! String || (value['name'] as String).length > 120 ||
         value['size'] is! int || (value['size'] as int) < 0 ||
-        (value['size'] as int) > maxFileBytes) {
+        (value['size'] as int) > maxFileBytes ||
+        (value['directory'] != null && value['directory'] is! bool) ||
+        (value['version'] != null && (value['version'] is! String || (value['version'] as String).length > 200)) ||
+        (value['modified'] != null && value['modified'] is! int) ||
+        (value['rootName'] != null && (value['rootName'] is! String || (value['rootName'] as String).length > 120)) ||
+        (value['folderId'] != null && (value['folderId'] != value['id'] ||
+          value['relativePath'] is! String ||
+          !isSharedPath(value['relativePath'] as String))) ||
+        (value['folderId'] == null &&
+          (value['relativePath'] != null || value['directory'] == true)) ||
+        (value['folderId'] != null && value['directory'] != true &&
+          value['relativePath'] == '')) {
       throw const FormatException('Invalid shared file');
     }
     return SharedFile(id: value['id'] as String,
-      name: safeFilename(value['name'] as String), size: value['size'] as int);
+      name: safeFilename(value['name'] as String), size: value['size'] as int,
+      folderId: value['folderId'] as String?, relativePath: value['relativePath'] as String?,
+      isDirectory: value['directory'] == true, version: value['version'] as String?,
+      modifiedAt: value['modified'] == null ? null : DateTime.fromMillisecondsSinceEpoch(value['modified'] as int),
+      rootName: value['rootName'] as String?);
+  }
+}
+
+bool isSharedPath(String path) => path.length <= 2048 &&
+  !RegExp(r'[\\:\x00-\x1f\x7f]').hasMatch(path) &&
+  (path.isEmpty || path.split('/').every((part) =>
+    part.isNotEmpty && part != '.' && part != '..' && part.length <= 255));
+
+class SharedPage {
+  const SharedPage(this.entries, {this.nextOffset, this.cursor});
+  final List<SharedFile> entries;
+  final int? nextOffset;
+  final String? cursor;
+  Map<String, dynamic> toJson() => {
+    'files': entries.map((e) => e.toJson()).toList(), 'nextOffset': nextOffset, 'cursor': cursor};
+  factory SharedPage.fromJson(Map<String, dynamic> value) {
+    final files = value['files'];
+    final next = value['nextOffset'];
+    if (files is! List || files.length > 200 ||
+        (next != null && (next is! int || next < 1 || next > 100000))) {
+      throw const FormatException('Invalid directory listing');
+    }
+    return SharedPage(files.map((e) => SharedFile.fromJson(e as Map<String, dynamic>)).toList(),
+      nextOffset: next as int?, cursor: value['cursor'] as String?);
   }
 }
 

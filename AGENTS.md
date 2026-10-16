@@ -1,0 +1,1 @@
+Source files must not contain comments. Remove existing source comments when editing them. Documentation belongs in Markdown files. Preserve strings containing URLs, regular expressions and protocol data when checking for comments.

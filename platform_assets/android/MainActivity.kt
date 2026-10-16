@@ -16,11 +16,13 @@ import java.util.concurrent.Executors
 class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
     private val worker = Executors.newSingleThreadExecutor()
+    private val folders by lazy { FolderAccess(this) }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "nearbridge/system")
         channel?.setMethodCallHandler { call, result ->
+            if (folders.handle(call, result)) return@setMethodCallHandler
             when (call.method) {
                 "startConnection" -> {
                     val service = Intent(this, ConnectionService::class.java)
@@ -59,6 +61,18 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         channel?.invokeMethod("shared", null)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (!folders.onActivityResult(requestCode, resultCode, data)) {
+            super.onActivityResult(requestCode, resultCode, data)
+        }
+    }
+
+    override fun onDestroy() {
+        folders.close()
+        worker.shutdownNow()
+        super.onDestroy()
     }
 
     @Suppress("DEPRECATION")
