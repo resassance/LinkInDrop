@@ -152,10 +152,17 @@ class BridgeController extends ChangeNotifier {
         desktop = DesktopShell(directory: directory!, hideOnClose: () => closeToTray, shutdown: shutdown);
         try { await desktop!.start(); } catch (error) { record(Activity('Фоновый режим недоступен', '$error', error: true)); }
       }
+      final delivered = node!.received.receipts.values.where((item) => item['skipped'] != true).toList().reversed.take(20);
+      final recorded = <String>{};
+      for (final item in delivered) {
+        final location = item['location'] as String;
+        if (!recorded.add(location)) continue;
+        activities.add(Activity('Файл получен', item['name'] as String, path: location));
+      }
       final received = await node!.inbox.list().where((item) => item is File &&
-        !p.basename(item.path).startsWith('.')).cast<File>().toList();
+        !p.basename(item.path).startsWith('.') && !recorded.contains(item.path)).cast<File>().toList();
       received.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
-      for (final file in received.take(20)) {
+      for (final file in received.take(activities.length >= 20 ? 0 : 20 - activities.length)) {
         activities.add(Activity('Файл получен', p.basename(file.path).replaceFirst(RegExp(r'^[A-Za-z0-9_-]{11}_'), ''), path: file.path));
       }
       node!.clipboardReceivingEnabled = receiveClipboard;
@@ -462,6 +469,11 @@ class BridgeController extends ChangeNotifier {
     record(Activity('Папка добавлена в очередь', '${entry.name} · ${jobs.length} файлов'));
   }
 
+  Future<void> revealReceivedFolder() async {
+    try { await openReceivedFolder(); }
+    catch (error) { record(Activity('Не удалось открыть папку', '$error', error: true)); }
+  }
+
   Future<void> openReceivedFolder() async {
     final current = node;
     if (current == null) throw StateError('Папка получения ещё не готова');
@@ -484,8 +496,13 @@ class BridgeController extends ChangeNotifier {
 
   Future<void> refreshLocalNetwork({bool reconnect = false}) async {
     if (!isAndroid) return;
+    final previous = localNetwork;
     localNetwork = await platformChannel.invokeMapMethod<String, dynamic>('localNetworkStatus') ?? {};
-    if (reconnect) await node?.networkChanged((localNetwork['addresses'] as List? ?? []).cast<String>());
+    final addresses = (localNetwork['addresses'] as List? ?? []).cast<String>();
+    final routeChanged = previous['direct'] != localNetwork['direct'] || previous['vpn'] != localNetwork['vpn'] || previous['wifi'] != localNetwork['wifi'] ||
+      !listEquals((previous['addresses'] as List? ?? []).cast<String>(), addresses);
+    if (reconnect && routeChanged) await node?.networkChanged(addresses);
+    else if (reconnect) await node?.checkPeers();
     notifyListeners();
   }
 

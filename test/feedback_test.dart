@@ -195,7 +195,8 @@ void main() {
       expect(scroll.pixels, closeTo(offset, 0.1));
       expect(scroll.maxScrollExtent, closeTo(extent, 0.1));
       expect(tester.widget<OutlinedButton>(find.ancestor(of: find.text('Файлы устройства'), matching: find.byWidgetPredicate((widget) => widget is OutlinedButton))).onPressed, isNotNull);
-      controller.busy = false;
+      controller.busy = false; controller.changed();
+      await tester.pump();
       await tester.ensureVisible(find.text('Настройки и фотобэкап'));
       await tester.tap(find.text('Настройки и фотобэкап'));
       await tester.pumpAndSettle();

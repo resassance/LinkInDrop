@@ -59,7 +59,7 @@ class _ReliabilityPanelState extends State<ReliabilityPanel> {
   Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     const Text('Получение и надёжность', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
     const SizedBox(height: 12),
-    OutlinedButton.icon(onPressed: c.node == null ? null : () => c.run(c.openReceivedFolder), icon: const Icon(Icons.folder_open), label: const Text('Открыть полученные файлы')),
+    OutlinedButton.icon(onPressed: c.node == null ? null : c.revealReceivedFolder, icon: const Icon(Icons.folder_open), label: const Text('Открыть полученные файлы')),
     SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Раскладывать файлы по типам'), subtitle: const Text('Фото, Видео, Музыка, Документы и другие. Структура переданных папок сохраняется.'), value: c.sortReceived, onChanged: (value) => c.run(() => c.setSortReceived(value))),
     Text('Папка получения: ${c.receiveDestination ?? 'Встроенная папка Nearbridge'}'),
     Wrap(spacing: 8, children: [
