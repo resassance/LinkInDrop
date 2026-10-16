@@ -1,6 +1,9 @@
 package dev.resassance.nearbridge
 
 import android.app.Activity
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -11,14 +14,16 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
-class FolderAccess(private val activity: Activity) {
-    private val resolver = activity.contentResolver
+class FolderAccess(private val context: Context, private val activity: () -> Activity?) {
+    private val main = Handler(Looper.getMainLooper())
+    private var pickerWritable = false
+    private val resolver = context.contentResolver
     private val worker = Executors.newFixedThreadPool(3)
     private val readers = ConcurrentHashMap<String, Reader>()
     private data class Reader(val input: InputStream, var remaining: Long)
     private var picker: MethodChannel.Result? = null
     private val requestCode = 7314
-    private val maxSize = 2147483648L
+    private val maxSize = 8796093022208L
     private val directoryMime = DocumentsContract.Document.MIME_TYPE_DIR
     private val columns = arrayOf(
         DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -36,11 +41,12 @@ class FolderAccess(private val activity: Activity) {
         if (call.method == "pickFolder") {
             if (picker != null) { result.error("folder_busy", "Выбор папки уже открыт", null); return true }
             picker = result
+            pickerWritable = call.argument<Boolean>("write") == true
             try {
                 val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
-                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
-                activity.startActivityForResult(intent, requestCode)
+                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION or (if (pickerWritable) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0))
+                (activity() ?: throw IllegalStateException("Откройте Nearbridge для выбора папки")).startActivityForResult(intent, requestCode)
             } catch (error: Exception) {
                 picker = null
                 result.error("folder", error.message, null)
@@ -48,7 +54,7 @@ class FolderAccess(private val activity: Activity) {
             return true
         }
         if (call.method !in setOf("checkFolder", "revokeFolder", "listFolder", "openFolderFile",
-                "readFolderFile", "closeFolderFile")) return false
+                "readFolderFile", "closeFolderFile", "openReceived")) return false
         worker.execute {
             try {
                 val value: Any? = when (call.method) {
@@ -64,6 +70,7 @@ class FolderAccess(private val activity: Activity) {
                         call.argument<String>("path") ?: "", call.argument<Int>("offset") ?: 0)
                     "openFolderFile" -> open(call.argument<String>("uri")!!, call.argument<String>("path")!!,
                         call.argument<Number>("offset")?.toLong() ?: 0L, call.argument<Number>("length")?.toLong())
+                    "openReceived" -> openUri(Uri.parse(call.argument<String>("location")!!), call.argument<Number>("offset")?.toLong() ?: 0L, call.argument<Number>("length")?.toLong())
                     "readFolderFile" -> {
                         val id = call.argument<String>("reader")!!
                         val reader = readers[id] ?: throw IllegalStateException("Чтение файла закрыто")
@@ -75,9 +82,9 @@ class FolderAccess(private val activity: Activity) {
                     "closeFolderFile" -> { readers.remove(call.argument<String>("reader")!!)?.input?.close(); null }
                     else -> null
                 }
-                activity.runOnUiThread { result.success(value) }
+                main.post { result.success(value) }
             } catch (error: Exception) {
-                activity.runOnUiThread { result.error("folder", error.message ?: "Папка недоступна", null) }
+                main.post { result.error("folder", error.message ?: "Папка недоступна", null) }
             }
         }
         return true
@@ -91,13 +98,14 @@ class FolderAccess(private val activity: Activity) {
         if (resultCode != Activity.RESULT_OK || uri == null) { result.success(null); return true }
         worker.execute {
             try {
-                val read = ((data?.flags ?: 0) and Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                val read = ((data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or (if (pickerWritable) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)))
+                if (pickerWritable && (read and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) throw SecurityException("Нет разрешения на запись папки")
                 if (read == 0) throw SecurityException("Нет разрешения на чтение папки")
                 resolver.takePersistableUriPermission(uri, read)
                 val info = describe(root(uri.toString()))
-                activity.runOnUiThread { result.success(mapOf("uri" to uri.toString(), "name" to info.name)) }
+                main.post { result.success(mapOf("uri" to uri.toString(), "name" to info.name)) }
             } catch (error: Exception) {
-                activity.runOnUiThread { result.error("folder", error.message, null) }
+                main.post { result.error("folder", error.message, null) }
             }
         }
         return true
@@ -176,10 +184,15 @@ class FolderAccess(private val activity: Activity) {
         if (path.isEmpty()) throw IllegalArgumentException("Выберите файл")
         if (readers.size >= 2) throw IllegalStateException("Дождитесь текущих скачиваний")
         val uri = resolve(location, path)
+        return openUri(uri, offset, length)
+    }
+
+    private fun openUri(uri: Uri, offset: Long, length: Long?): Map<String, Any> {
+        if (readers.size >= 2) throw IllegalStateException("Дождитесь текущих скачиваний")
         val info = describe(uri)
         val size = info.size ?: throw IllegalArgumentException("Размер файла неизвестен")
         if (info.directory || info.virtual || size < 0 || size > maxSize) {
-            throw IllegalArgumentException("Файл недоступен или больше 2 ГБ")
+            throw IllegalArgumentException("Файл недоступен или больше 8 ТБ")
         }
         val input = resolver.openInputStream(uri) ?: throw IllegalArgumentException("Нет доступа к файлу")
         try {

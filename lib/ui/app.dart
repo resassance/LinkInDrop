@@ -15,6 +15,8 @@ import '../core/android_folders.dart';
 import 'remote_files_dialog.dart';
 import '../core/transfer_queue.dart';
 import '../core/access_rules.dart';
+import 'reliability_panel.dart';
+import '../core/release_info.dart';
 
 const mint = Color(0xffb7f779);
 const background = Color(0xff111411);
@@ -60,6 +62,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     c.pairingApproval = _approve;
+    c.mobileActive = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     if (widget.start) unawaited(c.start());
   }
 
@@ -67,6 +70,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     c.mobileActive = state == AppLifecycleState.resumed;
     if (state == AppLifecycleState.resumed && c.isAndroid && !c.loading) {
+      unawaited(c.refreshBackground());
       unawaited(c.handleShared());
       unawaited(c.node?.checkPeers());
       unawaited(c.backup?.scan());
@@ -243,17 +247,21 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
             })])));
   }
 
-  Future<void> _browseFiles() async {
-    final peer = c.selectedPeer;
+  Future<void> _browseFiles({Peer? target, SharedFile? initial}) async {
+    final peer = target ?? c.selectedPeer;
     final node = c.node;
     if (peer == null || node == null) return;
     final chosen = await showDialog<SharedFile>(context: context, builder: (context) => RemoteFilesDialog(
-      deviceName: peer.name, canDownload: c.receiveFiles,
+      deviceName: peer.name, canDownload: c.receiveFiles, initialFolder: initial,
+      isFavorite: (folder) => c.isFavorite(peer.id, folder),
+      toggleFavorite: (folder) => c.toggleFavorite(peer.id, folder),
       load: (folder, offset) => node.browseFiles(peer, folder: folder, offset: offset),
       search: (folder, query, cursor) => node.searchFiles(peer, query, folder: folder, cursor: cursor),
       preview: (entry) => node.previewFile(peer, entry)));
     if (chosen != null) await c.run(() => c.enqueueDownload(peer, chosen));
   }
+
+  String _remaining(int seconds) => seconds < 60 ? '$seconds с' : seconds < 3600 ? '${seconds ~/ 60} мин' : '${seconds ~/ 3600} ч ${(seconds % 3600) ~/ 60} мин';
 
   String _fileSize(int bytes) => bytes < 1024 ? '$bytes Б'
     : bytes < 1024 * 1024 ? '${(bytes / 1024).toStringAsFixed(1)} КБ'
@@ -333,9 +341,17 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${labels[job.state] ?? job.state}${job.state == 'running' ? ' · ${(job.progress * 100).round()}%' : ''}', style: const TextStyle(color: subdued)),
           if (job.error != null) Text(job.error!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.redAccent)),
-          if (job.state == 'running') LinearProgressIndicator(value: job.progress),
+          if (job.state == 'running') ...[
+            Text('${_fileSize(job.doneBytes)} / ${_fileSize(job.totalBytes)} · ${_fileSize(job.bytesPerSecond.round())}/с${job.remainingSeconds == null ? '' : ' · осталось ${_remaining(job.remainingSeconds!)}'}'),
+            LinearProgressIndicator(value: job.progress),
+          ],
+          if (job.batchId != null) Text('Папка: ${(queue!.batchProgress(job.batchId!) * 100).round()}%'),
         ]),
         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (job.state == 'waiting' || job.state == 'paused' || job.state == 'failed') PopupMenuButton<int>(tooltip: 'Приоритет',
+            onSelected: (priority) => queue!.setPriority(job, priority),
+            itemBuilder: (_) => const [PopupMenuItem(value: 1, child: Text('Высокий приоритет')), PopupMenuItem(value: 0, child: Text('Обычный приоритет')), PopupMenuItem(value: -1, child: Text('Низкий приоритет'))]),
+          if (job.state == 'completed' && (job.kind == 'upload' || job.kind == 'download')) IconButton(tooltip: 'Отправить снова', icon: const Icon(Icons.replay), onPressed: () => c.run(() => c.repeat(job))),
           if (job.state == 'running' || job.state == 'waiting') IconButton(tooltip: 'Пауза', icon: const Icon(Icons.pause_rounded),
             onPressed: () => queue!.pause(job)),
           if (job.state == 'paused' || job.state == 'failed') IconButton(tooltip: 'Продолжить', icon: const Icon(Icons.play_arrow_rounded),
@@ -450,7 +466,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           child: const Icon(Icons.swap_horiz_rounded, color: background, size: 30)),
           const SizedBox(width: 12), const Expanded(child: Text('nearbridge', maxLines: 1,
             overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 25, fontWeight: FontWeight.w700))),
-          _badge('0.2 · alpha', subdued)]),
+          _badge(appVersion, subdued)]),
         const SizedBox(height: 32),
         Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Ваши устройства.\nОдин буфер.', style: TextStyle(fontSize: 34, height: 1.15, fontWeight: FontWeight.w700)),
@@ -476,6 +492,8 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           _queue(),
           const SizedBox(height: 20),
           _settings(),
+          const SizedBox(height: 16),
+          _panel(ReliabilityPanel(controller: c, openFolder: (peer, folder) => _browseFiles(target: peer, initial: folder))),
           const SizedBox(height: 20),
           _history(),
           const SizedBox(height: 20),
@@ -593,7 +611,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
       TextButton(onPressed: c.node!.cancelTransfer, child: const Text('Отменить передачу')),
     ],
     const SizedBox(height: 14),
-    const Text('До 2 ГБ на файл. Полученные файлы доступны в списке ниже.', style: TextStyle(color: subdued, fontSize: 12)),
+    const Text('До 8 ТБ на файл. Полученные файлы доступны в списке ниже.', style: TextStyle(color: subdued, fontSize: 12)),
   ]));
 
   Widget _history() => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -612,6 +630,9 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
       trailing: activity.path == null ? Text('${activity.time.hour.toString().padLeft(2, '0')}:${activity.time.minute.toString().padLeft(2, '0')}',
         style: const TextStyle(color: subdued, fontSize: 12)) : IconButton(icon: const Icon(Icons.open_in_new_rounded),
         tooltip: 'Открыть файл', onPressed: () async {
+          if (activity.path!.startsWith('content://')) {
+            await c.run(() => c.platformChannel.invokeMethod<void>('openReceivedFile', {'location': activity.path})); return;
+          }
           final result = await OpenFilex.open(activity.path!);
           if (result.type != ResultType.done) c.record(Activity('Не удалось открыть', result.message, error: true));
         })),

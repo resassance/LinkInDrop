@@ -1,17 +1,18 @@
-Nearbridge 0.2.0-alpha.1 for Android, Windows and Linux.
+Nearbridge 0.3.0-alpha.1 for Android, Windows and Linux.
 
-- Resume checked file blocks after interruptions; persist transfer queues with pause, retry and cancellation.
-- Transfer complete folder trees, including empty directories.
-- Keep the desktop app in the tray, opt into autostart, and drop files or folders onto a device card.
-- Limit shared files and folders to selected devices and set temporary access.
-- Search shared folders recursively and preview images or text before downloading.
-- Back up selected photo folders automatically without deleting originals or resending acknowledged content.
-- Pair through a self-hosted internet relay without a VPN, with pinned device TLS preserved end to end.
-- Remove source comments and record the no-comments rule in AGENTS.md.
+- Permanent Android release signing and manual update checks.
+- Network route/latency diagnostics with a report that excludes keys, tokens, names, addresses and paths.
+- Selected receive folders, rename/skip/replace policies and free-space checks.
+- Queue priorities, speed, remaining-time estimates, whole-folder progress and bandwidth limits.
+- Files larger than 2 GiB using 64-bit offsets, up to 8 TiB subject to storage limits.
+- Receiver-side SHA-256 verification of photo backups and restoration to RestoredPhotos.
+- Android transfer engine retained after the window closes, opt-in boot recovery and battery/notification status.
+- Favorite remote folders, recent recipients and repeat transfers.
 
-Update both devices for resumable uploads and the new browser. File sharing and photo backup require explicit selection and enabling. Direct LAN/VPN transfers remain supported. For internet access a deployed Nearbridge relay is required; the server, tests, Docker Compose and HTTPS configuration are included in relay_server/. No public relay has been deployed automatically.
+Update both devices. Upgrading Android from 0.2 or earlier may require one uninstall because earlier APKs used temporary signing certificates; back up received files first. From this release onward the signing certificate is stable and updates preserve application data and pairing. Android force-stop and manufacturer power restrictions can still stop background availability. Background clipboard reading remains unavailable.
 
-Android battery/process restrictions still affect background availability, and its document picker may restrict protected folders. Linux tray availability depends on the desktop. Desktop builds are unsigned and Android builds use a development signing key.
+Rename is the default conflict policy; replacing an existing file requires selecting Replace in settings. Receiving uses staging and a verified final copy, so reserve roughly twice the active file size temporarily. Android document-provider quotas may be unknown; writable providers must support temporary documents and renaming. Old backups without receipts cannot be verified retroactively. Speed limits pace blocks and allow short bursts.
 
-Download the build for your platform and its SHA-256 file. Windows users must extract the complete ZIP.
-Linux requires GTK 3 and the Ayatana AppIndicator runtime (`libayatana-appindicator3-1` on Debian/Ubuntu).
+Internet access without a VPN still requires a deployed Nearbridge relay. Its server and Docker/HTTPS instructions are included; no public relay is deployed automatically.
+
+Windows: extract the complete ZIP. Linux: GTK 3 and the Ayatana AppIndicator runtime are required (libayatana-appindicator3-1 on Debian/Ubuntu). Desktop builds are unsigned. Download the platform package and its SHA-256 file.
