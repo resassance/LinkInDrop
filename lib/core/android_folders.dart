@@ -19,6 +19,17 @@ class AndroidFolders implements FolderProvider {
 
   Future<Map<String, dynamic>?> pick() => channel.invokeMapMethod<String, dynamic>('pickFolder');
 
+  Future<List<String>> pickFiles() async =>
+    (await channel.invokeListMethod<String>('pickSharedFiles')) ?? [];
+
+  @override
+  Future<Map<String, dynamic>> statDocument(String location) async =>
+    (await _translate(() => channel.invokeMapMethod<String, dynamic>('statSharedDocument', {'uri': location})))!;
+
+  @override
+  Future<SharedRead> openDocument(String location, {int offset = 0, int? length}) =>
+    _open('openSharedDocument', {'uri': location, 'offset': offset, 'length': length});
+
   @override
   Future<void> validate(String location) => _translate(() => channel.invokeMethod<void>('checkFolder', {'uri': location}));
 
@@ -47,8 +58,11 @@ class AndroidFolders implements FolderProvider {
 
   @override
   Future<SharedRead> open(String location, String path, {int offset = 0, int? length}) async {
-    final value = await _translate(() => channel.invokeMapMethod<String, dynamic>('openFolderFile',
-      {'uri': location, 'path': path, 'offset': offset, 'length': length}));
+    return _open('openFolderFile', {'uri': location, 'path': path, 'offset': offset, 'length': length});
+  }
+
+  Future<SharedRead> _open(String method, Map<String, dynamic> arguments) async {
+    final value = await _translate(() => channel.invokeMapMethod<String, dynamic>(method, arguments));
     if (value == null) throw StateError('Файл недоступен');
     final reader = value['reader'] as String;
     var closed = false;

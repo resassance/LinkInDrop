@@ -17,6 +17,7 @@ import java.util.concurrent.Executors
 class FolderAccess(private val context: Context, private val activity: () -> Activity?) {
     private val main = Handler(Looper.getMainLooper())
     private var pickerWritable = false
+    private var pickerFiles = false
     private val resolver = context.contentResolver
     private val worker = Executors.newFixedThreadPool(3)
     private val readers = ConcurrentHashMap<String, Reader>()
@@ -38,12 +39,13 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
         val size: Long?, val virtual: Boolean, val modified: Long)
 
     fun handle(call: MethodCall, result: MethodChannel.Result): Boolean {
-        if (call.method == "pickFolder") {
+        if (call.method == "pickFolder" || call.method == "pickSharedFiles") {
             if (picker != null) { result.error("folder_busy", "Выбор папки уже открыт", null); return true }
             picker = result
+            pickerFiles = call.method == "pickSharedFiles"
             pickerWritable = call.argument<Boolean>("write") == true
             try {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
+                val intent = (if (pickerFiles) Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) else Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)).addFlags(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
                         Intent.FLAG_GRANT_PREFIX_URI_PERMISSION or (if (pickerWritable) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0))
                 (activity() ?: throw IllegalStateException("Откройте Nearbridge для выбора папки")).startActivityForResult(intent, requestCode)
@@ -54,10 +56,17 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
             return true
         }
         if (call.method !in setOf("checkFolder", "revokeFolder", "listFolder", "openFolderFile",
-                "readFolderFile", "closeFolderFile", "openReceived", "releaseFolderWrite")) return false
+                "readFolderFile", "closeFolderFile", "openReceived", "releaseFolderWrite", "statSharedDocument", "openSharedDocument")) return false
         worker.execute {
             try {
                 val value: Any? = when (call.method) {
+                    "statSharedDocument" -> {
+                        val info = describe(document(call.argument<String>("uri")!!))
+                        val size = info.size ?: throw IllegalArgumentException("Размер файла неизвестен")
+                        if (info.directory || info.virtual || size < 0 || size > maxSize) throw IllegalArgumentException("Файл недоступен")
+                        mapOf("name" to info.name, "size" to size, "modified" to info.modified, "version" to "${info.modified}:$size")
+                    }
+                    "openSharedDocument" -> openUri(document(call.argument<String>("uri")!!), call.argument<Number>("offset")?.toLong() ?: 0L, call.argument<Number>("length")?.toLong())
                     "checkFolder" -> { root(call.argument<String>("uri")!!); null }
                     "revokeFolder" -> {
                         val uri = Uri.parse(call.argument<String>("uri")!!)
@@ -100,21 +109,42 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
         if (code != requestCode) return false
         val result = picker ?: return true
         picker = null
-        val uri = data?.data
-        if (resultCode != Activity.RESULT_OK || uri == null) { result.success(null); return true }
+        val files = pickerFiles
+        val writable = pickerWritable
+        val uris = mutableListOf<Uri>()
+        data?.data?.let { uris.add(it) }
+        data?.clipData?.let { clip -> for (index in 0 until clip.itemCount) uris.add(clip.getItemAt(index).uri) }
+        if (resultCode != Activity.RESULT_OK || uris.isEmpty()) { result.success(null); return true }
+        val uri = uris.first()
         worker.execute {
             try {
-                val read = ((data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or (if (pickerWritable) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)))
-                if (pickerWritable && (read and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) throw SecurityException("Нет разрешения на запись папки")
-                if (read == 0) throw SecurityException("Нет разрешения на чтение папки")
-                resolver.takePersistableUriPermission(uri, read)
-                val info = describe(root(uri.toString()))
-                main.post { result.success(mapOf("uri" to uri.toString(), "name" to info.name)) }
+                val read = ((data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or (if (writable) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)))
+                if (writable && (read and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) throw SecurityException("Нет разрешения на запись папки")
+                if ((read and Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0) throw SecurityException("Нет разрешения на чтение папки")
+                if (files) {
+                    val selected = uris.distinct().take(200)
+                    for (item in selected) {
+                        resolver.takePersistableUriPermission(item, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        val info = describe(document(item.toString()))
+                        if (info.directory || info.virtual || info.size == null || info.size < 0 || info.size > maxSize) throw IllegalArgumentException("Файл недоступен")
+                    }
+                    main.post { result.success(selected.map { it.toString() }) }
+                } else {
+                    resolver.takePersistableUriPermission(uri, read)
+                    val info = describe(root(uri.toString()))
+                    main.post { result.success(mapOf("uri" to uri.toString(), "name" to info.name)) }
+                }
             } catch (error: Exception) {
                 main.post { result.error("folder", error.message, null) }
             }
         }
         return true
+    }
+
+    private fun document(location: String): Uri {
+        val uri = Uri.parse(location)
+        if (uri.scheme != "content" || resolver.persistedUriPermissions.none { it.uri == uri && it.isReadPermission }) throw SecurityException("Доступ к файлу отозван. Выберите файл заново.")
+        return uri
     }
 
     private fun root(location: String): Uri {

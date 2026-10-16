@@ -9,6 +9,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
+import android.net.wifi.WifiManager
 
 class ConnectionService : Service() {
     companion object {
@@ -25,17 +29,36 @@ class ConnectionService : Service() {
             if (running) context.getSystemService(NotificationManager::class.java).notify(731, notification(context, text))
         }
     }
+    private var wake: PowerManager.WakeLock? = null
+    private var wifi: WifiManager.WifiLock? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val renew = object : Runnable {
+        override fun run() {
+            if (!running) return
+            wake?.let { if (it.isHeld) it.release(); it.acquire(10 * 60 * 1000L) }
+            handler.postDelayed(this, 5 * 60 * 1000L)
+        }
+    }
     override fun onCreate() {
         super.onCreate()
         if (Build.VERSION.SDK_INT >= 26) getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("connection", "Подключение устройств", NotificationManager.IMPORTANCE_LOW))
         startForeground(731, notification(this, "Служба передачи файлов работает"))
         running = true
+        wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "nearbridge:connection").apply { setReferenceCounted(false) }
+        wifi = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "nearbridge:connection").apply { setReferenceCounted(false); acquire() }
+        handler.post(renew)
         (application as BridgeApplication).ensureEngine()
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!getSharedPreferences("connection", MODE_PRIVATE).getBoolean("enabled", true)) { stopSelf(); return START_NOT_STICKY }
         return START_STICKY
     }
-    override fun onDestroy() { running = false; super.onDestroy() }
+    override fun onDestroy() {
+        running = false
+        handler.removeCallbacks(renew)
+        wake?.let { if (it.isHeld) it.release() }
+        wifi?.let { if (it.isHeld) it.release() }
+        super.onDestroy()
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 }

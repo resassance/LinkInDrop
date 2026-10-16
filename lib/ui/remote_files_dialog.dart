@@ -132,7 +132,8 @@ class _RemoteFilesDialogState extends State<RemoteFilesDialog> {
   @override
   Widget build(BuildContext context) => AlertDialog(
     title: Text('Файлы: ${widget.deviceName}'),
-    content: SizedBox(width: 520, height: 400, child: Column(children: [
+    insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+    content: SizedBox(width: 520, height: MediaQuery.sizeOf(context).height < 600 ? 260 : 400, child: Column(children: [
       Row(children: [
         if (_folders.isNotEmpty) IconButton(tooltip: 'Назад', onPressed: _back,
           icon: const Icon(Icons.arrow_back_rounded)),
@@ -164,20 +165,23 @@ class _RemoteFilesDialogState extends State<RemoteFilesDialog> {
           for (final entry in _entries) ListTile(
             leading: !entry.isDirectory && widget.preview != null && RegExp(r'\.(png|jpe?g|webp|gif)$', caseSensitive: false).hasMatch(entry.name)
               ? _Thumbnail(load: () => _preview(entry)) : Icon(entry.isDirectory ? Icons.folder_outlined : Icons.insert_drive_file_outlined),
-            title: Text(entry.name), subtitle: Text(entry.isDirectory ? 'Папка' : _size(entry.size)),
+            title: Text(entry.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+            subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(entry.isDirectory ? 'Папка' : _size(entry.size)),
+              if (entry.isDirectory) Wrap(children: [
+                if (widget.toggleFavorite != null) IconButton(tooltip: 'Избранная папка',
+                  icon: Icon(widget.isFavorite?.call(entry) == true ? Icons.star : Icons.star_outline), onPressed: () async {
+                    await widget.toggleFavorite!(entry); if (mounted) setState(() {});
+                  }),
+                IconButton(tooltip: 'Скачать папку', icon: const Icon(Icons.download_rounded),
+                  onPressed: _loading || !widget.canDownload ? null : () => Navigator.pop(context, entry)),
+              ])
+              else IconButton(tooltip: 'Скачать', icon: const Icon(Icons.download_rounded),
+                onPressed: _loading || !widget.canDownload ? null : () => Navigator.pop(context, entry)),
+            ]),
             onTap: _loading ? null : entry.isDirectory ? () {
               _enter(entry);
-            } : () => _showPreview(entry),
-            trailing: entry.isDirectory ? Row(mainAxisSize: MainAxisSize.min, children: [
-              if (widget.toggleFavorite != null) IconButton(tooltip: 'Избранная папка',
-                icon: Icon(widget.isFavorite?.call(entry) == true ? Icons.star : Icons.star_outline), onPressed: () async {
-                  await widget.toggleFavorite!(entry); if (mounted) setState(() {});
-                }),
-              IconButton(tooltip: 'Скачать папку', icon: const Icon(Icons.download_rounded),
-                onPressed: _loading || !widget.canDownload ? null : () => Navigator.pop(context, entry)),
-              const Icon(Icons.chevron_right_rounded)])
-              : IconButton(tooltip: 'Скачать', icon: const Icon(Icons.download_rounded),
-                  onPressed: _loading || !widget.canDownload ? null : () => Navigator.pop(context, entry))),
+            } : () => _showPreview(entry)),
           if (_loading) const Center(child: CircularProgressIndicator()),
           if ((_nextOffset != null || _cursor != null) && !_loading) TextButton(
             onPressed: () => _load(reset: false), child: Text(_cursor != null ? 'Продолжить поиск' : 'Показать ещё')),

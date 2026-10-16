@@ -69,13 +69,13 @@ class _ReliabilityPanelState extends State<ReliabilityPanel> {
     FutureBuilder<int?>(future: _space, builder: (context, snapshot) => Text(c.receiveDestination?.startsWith('content://') == true
       ? 'Место для временного файла: ${snapshot.data == null ? 'неизвестно' : size(snapshot.data!)}. Свободное место у провайдера Android может быть недоступно.'
       : snapshot.data == null ? 'Свободное место: не удалось определить' : 'Свободно: ${size(snapshot.data!)}')),
-    DropdownButtonFormField<String>(value: c.conflictPolicy, decoration: const InputDecoration(labelText: 'Если имя файла уже занято'),
-      items: const [DropdownMenuItem(value: 'rename', child: Text('Переименовать новый файл')),
-        DropdownMenuItem(value: 'skip', child: Text('Пропустить новый файл')),
-        DropdownMenuItem(value: 'replace', child: Text('Заменить существующий файл'))],
+    DropdownButtonFormField<String>(value: c.conflictPolicy, isExpanded: true, decoration: const InputDecoration(labelText: 'Если имя файла уже занято'),
+      items: const [DropdownMenuItem(value: 'rename', child: Text('Переименовать новый файл', maxLines: 1, overflow: TextOverflow.ellipsis)),
+        DropdownMenuItem(value: 'skip', child: Text('Пропустить новый файл', maxLines: 1, overflow: TextOverflow.ellipsis)),
+        DropdownMenuItem(value: 'replace', child: Text('Заменить существующий файл', maxLines: 1, overflow: TextOverflow.ellipsis))],
       onChanged: c.node == null ? null : (value) => c.run(() => c.setReceiveStorage(c.receiveDestination, value!))),
     const SizedBox(height: 12),
-    DropdownButtonFormField<int>(value: c.speedLimit, decoration: const InputDecoration(labelText: 'Ограничение скорости передач'),
+    DropdownButtonFormField<int>(value: c.speedLimit, isExpanded: true, decoration: const InputDecoration(labelText: 'Ограничение скорости передач'),
       items: const [DropdownMenuItem(value: 0, child: Text('Без ограничения')),
         DropdownMenuItem(value: 65536, child: Text('64 КБ/с')), DropdownMenuItem(value: 262144, child: Text('256 КБ/с')),
         DropdownMenuItem(value: 1048576, child: Text('1 МБ/с')), DropdownMenuItem(value: 4194304, child: Text('4 МБ/с')),
@@ -92,20 +92,6 @@ class _ReliabilityPanelState extends State<ReliabilityPanel> {
         if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Отчёт без адресов, имён устройств, путей, ключей и токенов скопирован')));
       }, icon: const Icon(Icons.copy), label: const Text('Скопировать отчёт')),
     ]),
-    if (Platform.isAndroid) ...[
-      const Divider(height: 32),
-      const Text('Служба передачи Android', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-      SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Работать после закрытия окна'),
-        value: c.androidBackground, onChanged: (value) => c.run(() => c.setAndroidBackground(value, c.androidBoot))),
-      SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Восстанавливать после перезагрузки'),
-        value: c.androidBoot, onChanged: !c.androidBackground ? null : (value) => c.run(() => c.setAndroidBackground(true, value))),
-      Text('Служба: ${c.backgroundStatus['running'] == true ? 'работает' : 'остановлена'}. Уведомления: ${c.backgroundStatus['notifications'] == true ? 'разрешены' : 'проверьте настройки'}. Батарея: ${c.backgroundStatus['batteryUnrestricted'] == true ? 'без оптимизации' : 'возможны ограничения'}.',),
-      Wrap(spacing: 8, children: [
-        TextButton(onPressed: () => c.platformChannel.invokeMethod<void>('batterySettings'), child: const Text('Настройки батареи')),
-        TextButton(onPressed: () => c.platformChannel.invokeMethod<void>('notificationSettings'), child: const Text('Настройки уведомлений')),
-      ]),
-      const Text('Принудительная остановка и ограничения производителя могут остановить службу. Автоматическое чтение буфера в фоне Android недоступно.'),
-    ],
     const Divider(height: 32),
     const Text('Проверка фотобэкапа', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
     Text(c.backup?.verifying == true ? 'Сверяем SHA-256 сохранённых фото…' : 'Проверено: ${c.backup?.verified ?? 0} · отсутствует или повреждено: ${c.backup?.missing ?? 0}'),
@@ -134,4 +120,30 @@ class _ReliabilityPanelState extends State<ReliabilityPanel> {
       if (c.newerRelease != null) TextButton(onPressed: () => c.run(() => openRelease(c.newerRelease!['url']!)), child: const Text('Открыть страницу обновления')),
     ]),
   ]);
+}
+
+class BackgroundSettings extends StatelessWidget {
+  const BackgroundSettings({super.key, required this.controller});
+  final BridgeController controller;
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('Передача в фоне', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+      SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Передавать при выключенном экране'),
+        subtitle: const Text('Поддерживать связь после сворачивания и закрытия окна. Расход батареи увеличится.'),
+        value: c.androidBackground, onChanged: (value) => c.run(() => c.setAndroidBackground(value, c.androidBoot))),
+      SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Запускать после перезагрузки'),
+        value: c.androidBoot, onChanged: !c.androidBackground ? null : (value) => c.run(() => c.setAndroidBackground(true, value))),
+      Text('Служба: ${c.backgroundStatus['running'] == true ? 'работает' : 'остановлена'}'),
+      Text('Уведомления: ${c.backgroundStatus['notifications'] == true ? 'разрешены' : 'нужно разрешение'}'),
+      Text('Батарея: ${c.backgroundStatus['batteryUnrestricted'] == true ? 'без оптимизации' : 'нужно снять ограничения'}'),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        OutlinedButton(onPressed: () => c.run(() => c.platformChannel.invokeMethod<void>('batterySettings')), child: const Text('Разрешить работу без ограничений')),
+        TextButton(onPressed: () => c.run(() => c.platformChannel.invokeMethod<void>('notificationSettings')), child: const Text('Разрешить уведомления')),
+      ]),
+      const Text('Разрешите фоновую работу и автозапуск в настройках телефона. После принудительной остановки Android потребуется снова открыть Nearbridge.'),
+      const Divider(height: 32),
+    ]);
+  }
 }

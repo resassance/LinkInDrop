@@ -56,6 +56,7 @@ class BridgeHome extends StatefulWidget {
 class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   BridgeController get c => widget.controller;
   String? _draggingPeer;
+  final _scroll = ScrollController();
 
   @override
   void initState() {
@@ -81,6 +82,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     c.pairingApproval = null;
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -200,7 +202,9 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
       builder: (context, setDialogState) => AlertDialog(
         title: const Text('Мои файлы и папки'),
         content: SizedBox(width: 460, height: 320, child: Column(children: [
-          const Text('Привязанные устройства смогут просматривать выбранные папки целиком, включая новые и вложенные файлы. Доступ действует, пока включено скачивание.'),
+          Text(c.shareFiles ? 'Доступ включён. Привязанные устройства видят выбранные файлы и папки.' : 'Доступ выключен. Включите его ниже или добавьте файлы и папки.'),
+          if (!c.shareFiles) TextButton(onPressed: () async { await c.setSettings(fileSharing: true); if (context.mounted) setDialogState(() {}); }, child: const Text('Включить доступ')),
+          const Text('На телефоне выберите папку системным диалогом и подтвердите «Использовать эту папку». Для повторного доступа разрешение сохраняется.'),
           const SizedBox(height: 12),
           Expanded(child: ListView(children: [
             if (entries.isEmpty) const Text('Файлы и папки пока не выбраны'),
@@ -223,9 +227,10 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть')),
           FilledButton.icon(icon: const Icon(Icons.add), label: const Text('Добавить файлы'),
             onPressed: () async {
-              final files = await openFiles();
               await c.run(() async {
-                for (final file in files) { await node.sharedFiles.add(file.path); }
+                final paths = c.isAndroid ? await const AndroidFolders().pickFiles() : (await openFiles()).map((file) => file.path).toList();
+                for (final path in paths) { await node.sharedFiles.add(path); }
+                if (paths.isNotEmpty) await c.setSettings(fileSharing: true);
               });
               final updated = await ownEntries();
               if (context.mounted) setDialogState(() => entries = updated);
@@ -237,9 +242,10 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
                   final selected = await const AndroidFolders().pick();
                   if (selected != null) await node.sharedFolders.add(selected['uri'] as String,
                     name: selected['name'] as String?);
+                  if (selected != null) await c.setSettings(fileSharing: true);
                 } else {
                   final selected = await getDirectoryPath(confirmButtonText: 'Открыть доступ к папке');
-                  if (selected != null) await node.sharedFolders.add(selected);
+                  if (selected != null) { await node.sharedFolders.add(selected); await c.setSettings(fileSharing: true); }
                 }
               });
               final updated = await ownEntries();
@@ -335,11 +341,12 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         if (jobs.isNotEmpty) TextButton(onPressed: () => queue!.clearFinished(), child: const Text('Убрать готовые'))]),
       if (jobs.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12),
         child: Text('Здесь появятся файлы и папки. Передачи можно приостановить и продолжить.', style: TextStyle(color: subdued))),
-      for (final job in visible) ListTile(contentPadding: EdgeInsets.zero,
-        leading: Icon(job.kind == 'download' ? Icons.download_rounded : job.kind == 'backup' ? Icons.photo_library_outlined : Icons.upload_rounded),
-        title: Text(job.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('${job.state == 'completed' && job.skipped ? 'Пропущено' : labels[job.state] ?? job.state}${job.state == 'running' ? ' · ${(job.progress * 100).round()}%' : ''}', style: const TextStyle(color: subdued)),
+      for (final job in visible) Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [Icon(job.kind == 'download' ? Icons.download_rounded : job.kind == 'backup' ? Icons.photo_library_outlined : Icons.upload_rounded), const SizedBox(width: 12),
+          Expanded(child: Text(job.name, maxLines: 2, overflow: TextOverflow.ellipsis))]),
+        const SizedBox(height: 6),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${job.backupPaused ? 'Фотобэкап выключен' : job.state == 'completed' && job.skipped ? 'Пропущено' : labels[job.state] ?? job.state}${job.state == 'running' ? ' · ${(job.progress * 100).round()}%' : ''}', style: const TextStyle(color: subdued)),
           if (job.error != null) Text(job.error!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.redAccent)),
           if (job.state == 'running') ...[
             Text('${_fileSize(job.doneBytes)} / ${_fileSize(job.totalBytes)} · ${_fileSize(job.bytesPerSecond.round())}/с${job.remainingSeconds == null ? '' : ' · осталось ${_remaining(job.remainingSeconds!)}'}'),
@@ -347,7 +354,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           ],
           if (job.batchId != null) Text('Папка: ${(queue!.batchProgress(job.batchId!) * 100).round()}%'),
         ]),
-        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+        Wrap(spacing: 4, children: [
           if (job.state == 'waiting' || job.state == 'paused' || job.state == 'failed') PopupMenuButton<int>(tooltip: 'Приоритет',
             onSelected: (priority) => queue!.setPriority(job, priority),
             itemBuilder: (_) => const [PopupMenuItem(value: 1, child: Text('Высокий приоритет')), PopupMenuItem(value: 0, child: Text('Обычный приоритет')), PopupMenuItem(value: -1, child: Text('Низкий приоритет'))]),
@@ -355,16 +362,18 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           if (job.state == 'running' || job.state == 'waiting') IconButton(tooltip: 'Пауза', icon: const Icon(Icons.pause_rounded),
             onPressed: () => queue!.pause(job)),
           if (job.state == 'paused' || job.state == 'failed') IconButton(tooltip: 'Продолжить', icon: const Icon(Icons.play_arrow_rounded),
-            onPressed: () => queue!.resume(job)),
+            onPressed: job.kind == 'backup' && c.backup?.enabled != true ? null : () => queue!.resume(job)),
           if (job.state != 'completed' && job.state != 'cancelled') IconButton(tooltip: 'Отменить', icon: const Icon(Icons.close_rounded),
             onPressed: () => queue!.cancel(job)),
-        ])),
+        ]),
+      ])),
     ]));
   }
 
   Widget _settings() {
     final backup = c.backup;
     return _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      if (c.isAndroid) BackgroundSettings(controller: c),
       const Text('Фоновая работа и подключение', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
       if (Platform.isWindows || Platform.isLinux) ...[
         SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Сворачивать в трей при закрытии'),
@@ -385,9 +394,10 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
       const Text('Новые фото из выбранных папок отправляются на устройство ниже. Оригиналы сохраняются; одинаковые снимки повторно не передаются.', style: TextStyle(color: subdued)),
       if (backup != null) ...[
         DropdownButton<String>(isExpanded: true,
+          selectedItemBuilder: (context) => c.peers.map((peer) => Align(alignment: Alignment.centerLeft, child: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis))).toList(),
           value: c.peers.any((p) => p.id == backup.peerId) ? backup.peerId : null,
           hint: const Text('Куда копировать фото'),
-          items: c.peers.map((peer) => DropdownMenuItem(value: peer.id, child: Text(peer.name))).toList(),
+          items: c.peers.map((peer) => DropdownMenuItem(value: peer.id, child: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis))).toList(),
           onChanged: (value) async { backup.peerId = value; await backup.save(); c.changed(); }),
         for (final root in backup.sources.roots()) ListTile(contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.folder_outlined), title: Text(root.name),
@@ -397,9 +407,8 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
               await backup.sources.remove(root.id); c.changed();
             }))),
         SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Автоматически копировать новые фото'), value: backup.enabled,
-          onChanged: backup.peerId == null || backup.sources.roots().isEmpty ? null : (value) async {
-            backup.enabled = value; await backup.save(); c.changed(); if (value) unawaited(backup.scan());
-          }),
+          subtitle: Text(backup.enabled ? 'Выключение остановит поиск и приостановит передачи фото' : 'Копирование выключено; уже полученные фото сохраняются'),
+          onChanged: !backup.enabled && (backup.peerId == null || backup.sources.roots().isEmpty) ? null : (value) => c.setPhotoBackup(value)),
         Wrap(spacing: 8, runSpacing: 8, children: [
           OutlinedButton.icon(onPressed: c.busy ? null : _backupFolder, icon: const Icon(Icons.add_photo_alternate_outlined), label: const Text('Выбрать папку с фото')),
           TextButton(onPressed: backup.scanning || !backup.enabled ? null : () => backup.scan(), child: const Text('Проверить сейчас')),
@@ -460,7 +469,9 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) => AnimatedBuilder(animation: c, builder: (context, _) => Scaffold(
     body: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1180),
-      child: ListView(padding: const EdgeInsets.all(24), children: [
+      child: Scrollbar(controller: _scroll, thumbVisibility: true, child: SingleChildScrollView(
+        key: const PageStorageKey('home-scroll'), controller: _scroll, padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 500 ? 12 : 24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [Container(width: 42, height: 42,
           decoration: BoxDecoration(color: mint, borderRadius: BorderRadius.circular(12)),
           child: const Icon(Icons.swap_horiz_rounded, color: background, size: 30)),
@@ -500,8 +511,8 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           const Text('Локальная сеть или VPN · без аккаунта · проверка сертификата',
             style: TextStyle(color: subdued, fontSize: 12)),
         ],
-      ])))),
-    bottomNavigationBar: c.busy ? const LinearProgressIndicator(minHeight: 3) : null));
+      ])))))),
+    bottomNavigationBar: SizedBox(height: 3, child: c.busy ? const LinearProgressIndicator(minHeight: 3) : null)));
 
   Widget _devices() => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [const Expanded(child: Text('Устройства', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
@@ -638,7 +649,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         })),
   ]));
 
-  Widget _panel(Widget child) => Container(width: double.infinity, padding: const EdgeInsets.all(22),
+  Widget _panel(Widget child) => Container(width: double.infinity, padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 500 ? 14 : 22),
     decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(22),
       border: Border.all(color: const Color(0xff30382f))), child: child);
 

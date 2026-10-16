@@ -18,6 +18,8 @@ abstract class FolderProvider {
   Future<void> validate(String location);
   Future<SharedPage> list(String location, String id, String path, int offset);
   Future<SharedRead> open(String location, String path, {int offset = 0, int? length});
+  Future<Map<String, dynamic>> statDocument(String location) async => throw const FileSystemException('Document provider unavailable');
+  Future<SharedRead> openDocument(String location, {int offset = 0, int? length}) async => throw const FileSystemException('Document provider unavailable');
   Future<void> retain(String location) async {}
   Future<void> revoke(String location);
 }

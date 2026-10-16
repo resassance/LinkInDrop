@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0-alpha.2
+
+- Stabilize the page scrollbar and preserve scroll position during transfer updates.
+- Adapt queue and remote-folder actions to narrow windows and avoid dropdown overflow.
+- Disabling photo backup now interrupts scanning and pauses its queued transfers; enabling resumes only automatically paused jobs.
+- Persist Android document-file grants for remote browsing and downloading, and enable sharing when content is added.
+- Keep Android CPU and Wi-Fi available while the background service is enabled, expose battery exemption and notification settings, and show transfer progress in its notification.
+
 ## 0.3.0-alpha.1
 
 - Pin a permanent Android signing certificate and verify every release APK; add manual GitHub update checks.
