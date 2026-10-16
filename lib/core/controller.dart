@@ -507,7 +507,7 @@ class BridgeController extends ChangeNotifier {
   }
 
   Future<void> setDirectWifi(bool enabled) async {
-    if (node?.transferName != null || queue?.active != null) throw StateError('Сначала приостановите текущую передачу');
+    if (node?.hasActiveTransfers == true || queue?.active != null) throw StateError('Сначала приостановите текущую передачу');
     localNetwork = await platformChannel.invokeMapMethod<String, dynamic>('setDirectWifi', {'enabled': enabled}) ?? {};
     androidDirectWifi = enabled;
     await _saveSettings();

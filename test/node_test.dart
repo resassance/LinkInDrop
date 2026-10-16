@@ -58,6 +58,17 @@ void main() {
       final accepted = activities.where((a) => a.path != null).single;
       expect(accepted.path!.startsWith(first.inbox.path), isTrue);
       expect(await File(accepted.path!).readAsBytes(), bytes);
+      final originalPort = first.port;
+      await first.networkChanged([]);
+      expect(first.port, originalPort);
+      expect(first.peers.length, 1);
+      await second.sendClipboard(ClipboardPayload(id: 'after-network-change', type: 'text', data: payload.data, createdAt: DateTime.now()));
+      expect(received.length, 2);
+      await first.sharedFiles.add(file.path);
+      first.fileSharingEnabled = true;
+      final shared = (await second.listFiles(second.peers.values.single)).single;
+      await second.downloadFile(second.peers.values.single, shared);
+      expect(await File(activities.lastWhere((item) => item.path != null).path!).readAsBytes(), bytes);
       first.clipboardReceivingEnabled = false;
       await expectLater(second.sendClipboard(ClipboardPayload(id: 'next', type: 'text',
         data: payload.data, createdAt: DateTime.now())), throwsStateError);
