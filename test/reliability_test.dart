@@ -17,6 +17,9 @@ void main() {
     expect(compareVersions('v0.3.0', '0.3.0-alpha.9'), greaterThan(0));
     expect(compareVersions('v0.10.0', '0.9.99'), greaterThan(0));
     expect(compareVersions('v0.2.0', '0.3.0-alpha.1'), lessThan(0));
+    expect(compareVersions('v0.3.0-beta.1', '0.3.0-alpha.9'), greaterThan(0));
+    expect(compareVersions('v0.3.0-rc.1', '0.3.0-beta.9'), greaterThan(0));
+    expect(compareVersions('v0.3.0+build.2', '0.3.0+build.1'), 0);
   });
 
   test('receive policies preserve, rename or replace files and verify actual contents', () async {
