@@ -139,7 +139,9 @@ Build with `flutter build windows --release`, `flutter build linux --release` or
 
 ## Contributing
 
+Found a bug? Open an issue with your app version, platform and steps to reproduce it.
 
+[Changelog](CHANGELOG.md) · [Release notes](RELEASE.md) · [Report an issue](https://github.com/resassance/LinkInDrop/issues)
 
 ## License
 
