@@ -251,7 +251,7 @@ class BridgeNode {
         final request = await client.openUrl(body == null ? 'GET' : 'POST',
           Uri(scheme: 'https', host: host, port: port, path: endpoint, queryParameters: query));
         request.followRedirects = false;
-        request.headers.set('X-LinkInDrop-Id', identity.id);
+        request.headers.set('X-Nearbridge-Id', identity.id);
         if (token != null) request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
         if (body != null) {
           request.headers.contentType = ContentType.json;
@@ -482,9 +482,9 @@ class BridgeNode {
       final request = await client.postUrl(Uri(scheme: 'https', host: peer.connectionHost,
         port: peer.connectionPort, path: '/file')).timeout(const Duration(seconds: 15));
       request.followRedirects = false;
-      request.headers.set('X-LinkInDrop-Id', identity.id);
+      request.headers.set('X-Nearbridge-Id', identity.id);
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
-      request.headers.set('X-LinkInDrop-Filename', base64Url.encode(utf8.encode(name)));
+      request.headers.set('X-Nearbridge-Filename', base64Url.encode(utf8.encode(name)));
       request.contentLength = length;
       request.headers.contentType = ContentType.binary;
       var sent = 0;
@@ -687,7 +687,7 @@ class BridgeNode {
           queryParameters: entry.folderId == null ? null : {'folder': entry.folderId!, 'path': entry.relativePath!}))
           .timeout(const Duration(seconds: 15));
         request.followRedirects = false;
-        request.headers.set('X-LinkInDrop-Id', identity.id);
+        request.headers.set('X-Nearbridge-Id', identity.id);
         request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
         request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-${offset + transferBlockBytes - 1}');
         if (meta['etag'] != null) request.headers.set(HttpHeaders.ifMatchHeader, meta['etag']);
@@ -740,7 +740,7 @@ class BridgeNode {
         }
         final bytes = await _readTransferBlock(response, offset, total);
         if (bytes.length != end - offset + 1 || !secureEquals(
-            sha256.convert(bytes).toString(), response.headers.value('X-LinkInDrop-SHA256') ?? '')) {
+            sha256.convert(bytes).toString(), response.headers.value('X-Nearbridge-SHA256') ?? '')) {
           throw const FormatException('Block checksum mismatch');
         }
         if (_transferCancelled) throw const TransferStopped();
@@ -841,9 +841,9 @@ class BridgeNode {
           final request = await client.postUrl(Uri(scheme: 'https', host: peer.connectionHost,
             port: peer.connectionPort, path: '/uploads/$id/block', queryParameters: {'offset': '$offset'}));
           request.followRedirects = false;
-          request.headers.set('X-LinkInDrop-Id', identity.id);
+          request.headers.set('X-Nearbridge-Id', identity.id);
           request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
-          request.headers.set('X-LinkInDrop-SHA256', sha256.convert(bytes).toString());
+          request.headers.set('X-Nearbridge-SHA256', sha256.convert(bytes).toString());
           request.contentLength = bytes.length;
           await request.addStream(() async* {
             for (var start = 0; start < bytes.length; start += 65536) {
@@ -905,7 +905,7 @@ class BridgeNode {
         await _acceptPair(request);
         return;
       }
-      final peer = peers[request.headers.value('X-LinkInDrop-Id')];
+      final peer = peers[request.headers.value('X-Nearbridge-Id')];
       if (peer == null || !secureEquals(
           request.headers.value(HttpHeaders.authorizationHeader) ?? '',
           'Bearer ${peer.incomingToken}')) {
@@ -1087,7 +1087,7 @@ class BridgeNode {
         if (bytes.isEmpty) throw const FormatException('Incomplete source');
         request.response.statusCode = 206;
         request.response.headers.set(HttpHeaders.contentRangeHeader, 'bytes $offset-${offset + bytes.length - 1}/${source.size}');
-        request.response.headers.set('X-LinkInDrop-SHA256', sha256.convert(bytes).toString());
+        request.response.headers.set('X-Nearbridge-SHA256', sha256.convert(bytes).toString());
         request.response.contentLength = bytes.length;
         request.response.add(bytes);
       } else {
@@ -1119,7 +1119,7 @@ class BridgeNode {
       final offset = int.tryParse(request.uri.queryParameters['offset'] ?? '');
       if (offset == null) throw const FormatException('Missing offset');
       result = await uploads.block(peer.id, parts[1], offset, await _readBounded(request, transferBlockBytes),
-        request.headers.value('X-LinkInDrop-SHA256') ?? '');
+        request.headers.value('X-Nearbridge-SHA256') ?? '');
     } else if (parts.length == 3 && parts[2] == 'complete') {
       await _readBounded(request, 8192);
       result = await uploads.complete(peer.id, parts[1]);
@@ -1218,7 +1218,7 @@ class BridgeNode {
       _respond(request, 413, {'error': 'File too large or receiver busy'});
       return;
     }
-    final encoded = request.headers.value('X-LinkInDrop-Filename');
+    final encoded = request.headers.value('X-Nearbridge-Filename');
     if (encoded == null || encoded.length > 2048) throw const FormatException('Missing filename');
     final name = safeFilename(utf8.decode(base64Url.decode(encoded)));
     final id = randomToken(8);

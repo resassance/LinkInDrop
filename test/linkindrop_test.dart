@@ -39,7 +39,7 @@ void main() {
     await tester.runAsync(() => controller.stageFiles([file.path]));
     await tester.binding.setSurfaceSize(const Size(1440, 1024));
     await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
-    await tester.tap(find.byKey(const ValueKey('theme-dark')));
+    await tester.runAsync(() => tester.tap(find.byKey(const ValueKey('theme-dark'))));
     await tester.pumpAndSettle();
     expect(Theme.of(tester.element(find.byType(Scaffold).first)).brightness, Brightness.dark);
     await tester.runAsync(() => controller.setAppearance(language: 'ru'));
