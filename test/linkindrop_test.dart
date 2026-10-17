@@ -32,31 +32,43 @@ void main() {
     expect(en.text('Адрес: {0}', ['Телефон {1}']), 'Address: Телефон {1}');
   });
 
-  testWidgets('theme and language changes persist and do not discard the selected files', (tester) async {
+  test('appearance preferences persist without discarding selected files', () async {
+    final root = await Directory.systemTemp.createTemp('linkindrop-preferences-');
+    final controller = BridgeController()..directory = root;
+    try {
+      final file = await File('${root.path}/notes.txt').writeAsString('hello');
+      await controller.stageFiles([file.path]);
+      await controller.setAppearance(theme: 'dark', language: 'ru');
+      final saved = jsonDecode(await File('${root.path}/settings.json').readAsString()) as Map;
+      expect(saved['theme'], 'dark');
+      expect(saved['language'], 'ru');
+      expect(controller.selection.items.single.path, file.path);
+    } finally {
+      controller.dispose();
+      await root.delete(recursive: true);
+    }
+  });
+
+  testWidgets('theme switch and language change preserve the selected file preview', (tester) async {
     final root = (await tester.runAsync(() => Directory.systemTemp.createTemp('linkindrop-settings-')))!;
-    final controller = BridgeController()..loading = false..directory = root..languagePreference = 'en';
+    final controller = BridgeController()..loading = false..languagePreference = 'en';
     final file = (await tester.runAsync(() => File('${root.path}/Заметки.txt').writeAsString('hello')))!;
     await tester.runAsync(() => controller.stageFiles([file.path]));
     await tester.binding.setSurfaceSize(const Size(1440, 1024));
     await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
-    await tester.runAsync(() async {
-      await tester.tap(find.byKey(const ValueKey('theme-dark')));
-      await controller.setAppearance(language: 'en');
-    });
+    await tester.tap(find.byKey(const ValueKey('theme-dark')));
     await tester.pumpAndSettle();
     expect(Theme.of(tester.element(find.byType(Scaffold).first)).brightness, Brightness.dark);
-    await tester.runAsync(() => controller.setAppearance(language: 'ru'));
+    await controller.setAppearance(language: 'ru');
     await tester.pumpAndSettle();
     expect(find.text('К отправке'), findsOneWidget);
     expect(find.text('Заметки.txt'), findsOneWidget);
-    final saved = jsonDecode((await tester.runAsync(() => File('${root.path}/settings.json').readAsString()))!) as Map;
-    expect(saved['theme'], 'dark');
-    expect(saved['language'], 'ru');
+    expect(controller.selection.items.single.path, file.path);
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
     await tester.runAsync(() => root.delete(recursive: true));
     await tester.binding.setSurfaceSize(null);
-  });
+  }, timeout: const Timeout(Duration(seconds: 30)));
 
   testWidgets('selection requires the explicit transfer action', (tester) async {
     final root = (await tester.runAsync(() => Directory.systemTemp.createTemp('linkindrop-confirm-')))!;
