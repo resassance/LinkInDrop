@@ -123,6 +123,9 @@ void main() {
     expect(find.byType(ExpansionTile), findsNothing);
     expect(find.byKey(const ValueKey('send-clipboard')), findsNothing);
     await capture(tester, key, 'android-settings');
+    c.record(Activity('Не получилось', 'Выберите другую папку', error: true));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(SnackBar, 'Выберите другую папку'), findsOneWidget);
     await tester.pumpWidget(const SizedBox()); c.dispose(); await tester.binding.setSurfaceSize(null);
   });
 

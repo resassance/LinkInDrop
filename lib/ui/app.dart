@@ -57,11 +57,14 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   String? _draggingPeer;
   bool _dropping = false;
   final _scroll = ScrollController();
+  Activity? _lastActivity;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _lastActivity = c.activities.isEmpty ? null : c.activities.first;
+    c.addListener(_feedback);
     c.pairingApproval = _approve;
     c.mobileActive = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     if (widget.start) unawaited(c.start());
@@ -81,9 +84,23 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    c.removeListener(_feedback);
     c.pairingApproval = null;
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _feedback() {
+    final activity = c.activities.isEmpty ? null : c.activities.first;
+    if (activity == null || activity == _lastActivity) return;
+    _lastActivity = activity;
+    if (!activity.error) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)..removeCurrentSnackBar()..showSnackBar(SnackBar(backgroundColor: Theme.of(context).colorScheme.errorContainer,
+        content: Text(activity.detail, maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer)),
+        action: SnackBarAction(label: tr(context, 'Подробнее'), onPressed: () => _showActivity(activity))));
+    });
   }
 
   Future<bool> _approve(String name) async {
@@ -543,7 +560,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     await c.run(c.pushClipboard);
     if (!mounted) return;
     final activity = c.activities.isEmpty ? null : c.activities.first;
-    if (activity != null && activity != before) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    if (activity != null && activity != before && !activity.error) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       backgroundColor: activity.error ? Theme.of(context).colorScheme.errorContainer : successColor(context),
       content: Text(activity.error ? activity.detail : activity.title, style: TextStyle(color: activity.error ? Theme.of(context).colorScheme.onErrorContainer : Colors.white))));
   }

@@ -434,6 +434,8 @@ class BridgeController extends ChangeNotifier {
         }
       } catch (_) {}
     }
+    if (thumbnail == null && job.source != null && !p.isWithin(p.join(directory!.path, 'shared'), job.source!) &&
+        RegExp(r'\.(png|jpe?g|webp|gif|heic|heif)$', caseSensitive: false).hasMatch(job.name)) thumbnail = job.source;
     final activity = Activity(localizeMessage(job.skipped ? 'Файл пропущен получателем' : 'Файл отправлен'),
       '${localizeMessage('На {0}', [node?.peers[job.peerId]?.name ?? job.peerId])} · ${job.name}',
       name: job.name, thumbnailPath: thumbnail, kind: 'upload');
