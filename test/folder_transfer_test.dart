@@ -2,13 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/connection_error.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/core/node.dart';
+import 'package:linkindrop/core/connection_error.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/core/node.dart';
 
 void main() {
   test('TLS folder browsing, nested download, disabled sharing and grant revocation', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-folder-transfer-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-folder-transfer-');
     final activities = <Activity>[];
     BridgeNode make(String name) => BridgeNode(
       directory: Directory('${root.path}/$name'), name: name, preferredPort: 0,
@@ -38,7 +38,7 @@ void main() {
         for (final path in ['../private/identity.json', '/etc/passwd', r'Nested\..\private']) {
           final request = await client.getUrl(Uri(scheme: 'https', host: '127.0.0.1',
             port: first.port, path: '/browse/file', queryParameters: {'folder': folder.id, 'path': path}));
-          request.headers.set('X-Nearbridge-Id', second.identity.id);
+          request.headers.set('X-LinkInDrop-Id', second.identity.id);
           request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
           final response = await request.close();
           expect(response.statusCode, 400);

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 
-const appVersion = '0.3.0-alpha.3';
+const appVersion = '0.3.0-alpha.4';
 
 final _versionPattern = RegExp(r'^v?([0-9]{1,9})\.([0-9]{1,9})\.([0-9]{1,9})(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$');
 
@@ -29,7 +29,7 @@ Future<Map<String, String>?> checkRelease() async {
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
   try {
     return await (() async {
-      final request = await client.getUrl(Uri.parse('https://api.github.com/repos/resassance/nearbridge/releases?per_page=30'));
+      final request = await client.getUrl(Uri.parse('https://api.github.com/repos/resassance/LinkInDrop/releases?per_page=30'));
       request.headers.set(HttpHeaders.userAgentHeader, 'LinkInDrop/$appVersion');
       request.headers.set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
       final response = await request.close();
@@ -44,16 +44,16 @@ Future<Map<String, String>?> checkRelease() async {
       if (releases.isEmpty || compareVersions(releases.first['tag_name'] as String, appVersion) <= 0) return null;
       final tag = releases.first['tag_name'] as String;
       if (!RegExp(r'^v[0-9A-Za-z.+-]+$').hasMatch(tag)) throw const FormatException('Invalid release tag');
-      return {'version': tag, 'url': 'https://github.com/resassance/nearbridge/releases/tag/$tag'};
+      return {'version': tag, 'url': 'https://github.com/resassance/LinkInDrop/releases/tag/$tag'};
     })().timeout(const Duration(seconds: 20));
   } finally { client.close(force: true); }
 }
 
 Future<void> openRelease(String url) async {
   final uri = Uri.parse(url);
-  if (uri.scheme != 'https' || uri.host != 'github.com' || !uri.path.startsWith('/resassance/nearbridge/releases/')) throw const FormatException('Invalid release URL');
+  if (uri.scheme != 'https' || uri.host != 'github.com' || !uri.path.startsWith('/resassance/LinkInDrop/releases/')) throw const FormatException('Invalid release URL');
   if (Platform.isAndroid) {
-    await const MethodChannel('nearbridge/system').invokeMethod<void>('openRelease', {'url': url});
+    await const MethodChannel('linkindrop/system').invokeMethod<void>('openRelease', {'url': url});
   } else {
     final result = Platform.isWindows
       ? await Process.run('rundll32.exe', ['url.dll,FileProtocolHandler', url])

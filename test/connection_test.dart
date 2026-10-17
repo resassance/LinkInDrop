@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/connection_error.dart';
-import 'package:nearbridge/core/windows_network.dart';
+import 'package:linkindrop/core/connection_error.dart';
+import 'package:linkindrop/core/windows_network.dart';
 
 void main() {
   test('network timeout reports the destination and concrete network checks', () {
@@ -35,7 +35,7 @@ void main() {
 
   test('firewall setup treats executable paths as data and limits inbound scope', () {
     final template = File('assets/windows/configure-network.ps1').readAsStringSync();
-    const path = r"C:\Apps\test'; Remove-Item important\nearbridge.exe";
+    const path = r"C:\Apps\test'; Remove-Item important\linkindrop.exe";
     final script = renderFirewallScript(template, path, 49152);
     expect(script, isNot(contains(path)));
     expect(script, contains(base64.encode(utf8.encode(path))));
@@ -43,8 +43,8 @@ void main() {
     expect(script, contains('-RemoteAddress LocalSubnet'));
     expect(script, isNot(contains('Set-NetFirewallProfile')));
     expect(() => renderFirewallScript(template, path, 0), throwsArgumentError);
-    final bytes = base64.decode(encodePowerShell('Nearbridge Ω'));
+    final bytes = base64.decode(encodePowerShell('LinkInDrop Ω'));
     final units = [for (var i = 0; i < bytes.length; i += 2) bytes[i] | bytes[i + 1] << 8];
-    expect(String.fromCharCodes(units), 'Nearbridge Ω');
+    expect(String.fromCharCodes(units), 'LinkInDrop Ω');
   });
 }

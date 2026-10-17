@@ -3,16 +3,16 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/access_rules.dart';
-import 'package:nearbridge/core/connection_error.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/core/node.dart';
-import 'package:nearbridge/core/shared_folders.dart';
-import 'package:nearbridge/core/transfer_protocol.dart';
+import 'package:linkindrop/core/access_rules.dart';
+import 'package:linkindrop/core/connection_error.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/core/node.dart';
+import 'package:linkindrop/core/shared_folders.dart';
+import 'package:linkindrop/core/transfer_protocol.dart';
 
 void main() {
   test('downloads and uploads retain checked blocks across pause and resume', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-resume-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-resume-');
     var pause = false;
     late BridgeNode receiver;
     final activities = <Activity>[];
@@ -58,7 +58,7 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('per-device access, expiry, recursive search and text preview', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-tools-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-tools-');
     BridgeNode make(String name) => BridgeNode(directory: Directory('${root.path}/$name'),
       name: name, preferredPort: 0, discoveryEnabled: false, onPairRequest: (_) async => true,
       onClipboard: (_) async {}, onActivity: (_) {}, onChanged: () {});

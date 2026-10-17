@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/controller.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/ui/app.dart';
+import 'package:linkindrop/core/controller.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/ui/app.dart';
 
 void main() {
   testWidgets('desktop and compact layouts show pairing and clipboard controls', (tester) async {
     final controller = BridgeController()..loading = false..languagePreference = 'ru';
     await tester.binding.setSurfaceSize(const Size(1100, 1100));
-    await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
+    await tester.pumpWidget(LinkInDropApp(controller: controller, start: false));
     expect(find.text('LinkInDrop'), findsOneWidget);
     expect(find.text('Выбрать файлы'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('nav-2')));
@@ -31,7 +31,7 @@ void main() {
     controller.record(Activity('Не получилось',
       'Нет соединения с 192.168.31.45:45831. Проверьте VPN и Windows Firewall.\n\nПодробности: SocketException: timeout', error: true));
     await tester.binding.setSurfaceSize(const Size(1100, 1600));
-    await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
+    await tester.pumpWidget(LinkInDropApp(controller: controller, start: false));
     await tester.scrollUntilVisible(find.text('Не получилось'), 300,
       scrollable: find.byType(Scrollable).first);
     await tester.ensureVisible(find.text('Не получилось'));

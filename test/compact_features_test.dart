@@ -5,11 +5,11 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/controller.dart';
-import 'package:nearbridge/core/node.dart';
-import 'package:nearbridge/core/receive_storage.dart';
-import 'package:nearbridge/core/received_categories.dart';
-import 'package:nearbridge/ui/app.dart';
+import 'package:linkindrop/core/controller.dart';
+import 'package:linkindrop/core/node.dart';
+import 'package:linkindrop/core/receive_storage.dart';
+import 'package:linkindrop/core/received_categories.dart';
+import 'package:linkindrop/ui/app.dart';
 
 class _AndroidController extends BridgeController {
   @override
@@ -39,7 +39,7 @@ void main() {
   });
 
   test('organized receive storage keeps receipts idempotent and conflict policies working', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-organize-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-organize-');
     try {
       final private = await Directory('${root.path}/private').create();
       final inbox = await Directory('${private.path}/inbox').create();
@@ -68,8 +68,8 @@ void main() {
   });
 
   test('Android folder opener and explicit direct Wi-Fi preference use the platform bridge', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-android-network-');
-    const channel = MethodChannel('nearbridge/system');
+    final root = await Directory.systemTemp.createTemp('linkindrop-android-network-');
+    const channel = MethodChannel('linkindrop/system');
     final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     final calls = <MethodCall>[];
     messenger.setMockMethodCallHandler(channel, (call) async {
@@ -101,7 +101,7 @@ void main() {
     controller.node = BridgeNode(directory: Directory('/tmp/unused'), name: 'test', onPairRequest: (_) async => false,
       onClipboard: (_) async {}, onActivity: (_) {}, onChanged: () {});
     await tester.binding.setSurfaceSize(const Size(1100, 900));
-    await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
+    await tester.pumpWidget(LinkInDropApp(controller: controller, start: false));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('file-drop-zone')), findsOneWidget);
     expect(find.text('Перетащите сюда файлы или папки'), findsOneWidget);

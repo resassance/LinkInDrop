@@ -17,7 +17,7 @@ class BootstrapTest(unittest.TestCase):
             shutil.copyfile(project / 'tool/bootstrap.py', root / 'tool/bootstrap.py')
 
             def create_platforms(command, **kwargs):
-                self.assertIn('--project-name=nearbridge', command)
+                self.assertIn('--project-name=linkindrop', command)
                 self.assertIn('--org=dev.resassance', command)
                 main = root / 'android/app/src/main'
                 main.mkdir(parents=True)
@@ -26,11 +26,11 @@ class BootstrapTest(unittest.TestCase):
                 for platform in ['windows', 'linux']:
                     cmake = root / platform / 'CMakeLists.txt'
                     cmake.parent.mkdir(exist_ok=True)
-                    cmake.write_text('set(BINARY_NAME "nearbridge")\n')
+                    cmake.write_text('set(BINARY_NAME "linkindrop")\n')
                 for name in ['windows/runner/resources/app_icon.ico', 'windows/runner/Runner.rc', 'windows/runner/main.cpp', 'linux/runner/my_application.cc']:
                     target = root / name
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_text('"nearbridge"\n')
+                    target.write_text('"linkindrop"\n')
 
             with patch('shutil.which', return_value='/fake/flutter'), patch('subprocess.run', side_effect=create_platforms):
                 runpy.run_path(str(root / 'tool/bootstrap.py'), run_name='__main__')
@@ -41,11 +41,11 @@ class BootstrapTest(unittest.TestCase):
             self.assertFalse((root / 'android/app/src/main/res/drawable/tile_icon.xml').exists())
             self.assertTrue((root / 'android/app/src/main/res/drawable/tile_icon.png').exists())
             self.assertTrue((root / 'android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml').exists())
-            self.assertTrue((root / 'android/app/src/main/kotlin/dev/resassance/nearbridge/NativeStrings.kt').exists())
+            self.assertTrue((root / 'android/app/src/main/kotlin/dev/resassance/linkindrop/NativeStrings.kt').exists())
             manifest = (root / 'android/app/src/main/AndroidManifest.xml').read_text()
             self.assertIn('android:label="LinkInDrop"', manifest)
-            self.assertIn('dev.resassance.nearbridge.received', manifest)
-            self.assertIn('nearbridgeRelease', (root / 'android/app/build.gradle.kts').read_text())
+            self.assertIn('dev.resassance.linkindrop.received', manifest)
+            self.assertIn('linkindropRelease', (root / 'android/app/build.gradle.kts').read_text())
 
 
 if __name__ == '__main__':

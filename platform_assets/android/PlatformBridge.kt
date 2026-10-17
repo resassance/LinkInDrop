@@ -1,4 +1,4 @@
-package dev.resassance.nearbridge
+package dev.resassance.linkindrop
 
 import android.content.ClipboardManager
 import android.content.Context
@@ -23,7 +23,7 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
     private val worker = Executors.newFixedThreadPool(2)
     val folders = FolderAccess(context) { activity }
     private val received = ReceiveFiles(context)
-    private val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "nearbridge/system")
+    private val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "linkindrop/system")
     private fun resolverType(uri: Uri): String = context.contentResolver.getType(uri) ?: "application/octet-stream"
     fun attach(value: MainActivity) { activity = value }
     fun detach(value: MainActivity) { if (activity === value) activity = null }
@@ -89,7 +89,7 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
                     }
                     "openRelease" -> {
                         val uri = Uri.parse(call.argument<String>("url")!!)
-                        if (uri.scheme != "https" || uri.host != "github.com" || !uri.path.orEmpty().startsWith("/resassance/nearbridge/releases/")) throw IllegalArgumentException("Invalid release URL")
+                        if (uri.scheme != "https" || uri.host != "github.com" || !uri.path.orEmpty().startsWith("/resassance/LinkInDrop/releases/")) throw IllegalArgumentException("Invalid release URL")
                         context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); result.success(null)
                     }
                     "clipboardSensitive" -> {

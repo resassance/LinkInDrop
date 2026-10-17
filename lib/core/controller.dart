@@ -22,7 +22,6 @@ import 'access_rules.dart';
 import 'release_info.dart';
 import 'receive_storage.dart';
 import 'send_selection.dart';
-import 'app_directory.dart';
 
 class BridgeController extends ChangeNotifier {
   BridgeController({ClipboardAdapter? clipboard}) : clipboard = clipboard ?? ClipboardAdapter() {
@@ -34,7 +33,7 @@ class BridgeController extends ChangeNotifier {
   String languagePreference = 'system';
   final List<Activity> activities = [];
   final List<String> pendingFiles = [];
-  final platformChannel = const MethodChannel('nearbridge/system');
+  final platformChannel = const MethodChannel('linkindrop/system');
   BridgeNode? node;
   TransferQueue? queue;
   PhotoBackup? backup;
@@ -101,7 +100,7 @@ class BridgeController extends ChangeNotifier {
 
   Future<void> start() async {
     try {
-      directory = await resolveAppDirectory(await getApplicationSupportDirectory());
+      directory = await getApplicationSupportDirectory();
       final settings = File(p.join(directory!.path, 'settings.json'));
       if (await settings.exists()) {
         final data = jsonDecode(await settings.readAsString()) as Map<String, dynamic>;
@@ -575,7 +574,7 @@ class BridgeController extends ChangeNotifier {
       final folder = Directory(destination);
       final root = await folder.resolveSymbolicLinks();
       if (!p.equals(root, p.normalize(destination)) || p.equals(root, directory!.path) || p.isWithin(directory!.path, root)) throw StateError(localizeMessage("Выберите папку вне данных LinkInDrop"));
-      final probe = File(p.join(root, '.nearbridge-${randomToken(8)}'));
+      final probe = File(p.join(root, '.linkindrop-${randomToken(8)}'));
       try { await probe.writeAsString('', flush: true); } finally { if (await probe.exists()) await probe.delete(); }
       destination = root;
     }

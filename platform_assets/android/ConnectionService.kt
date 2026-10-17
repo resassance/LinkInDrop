@@ -1,4 +1,4 @@
-package dev.resassance.nearbridge
+package dev.resassance.linkindrop
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -44,8 +44,8 @@ class ConnectionService : Service() {
         if (Build.VERSION.SDK_INT >= 26) getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("connection", NativeStrings.text(this, "Подключение устройств"), NotificationManager.IMPORTANCE_LOW))
         startForeground(731, notification(this, NativeStrings.text(this, "Служба передачи файлов работает")))
         running = true
-        wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "nearbridge:connection").apply { setReferenceCounted(false) }
-        wifi = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "nearbridge:connection").apply { setReferenceCounted(false); acquire() }
+        wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "linkindrop:connection").apply { setReferenceCounted(false) }
+        wifi = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "linkindrop:connection").apply { setReferenceCounted(false); acquire() }
         handler.post(renew)
         (application as BridgeApplication).ensureEngine()
     }

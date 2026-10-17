@@ -3,13 +3,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/core/node.dart';
-import 'package:nearbridge/core/connection_error.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/core/node.dart';
+import 'package:linkindrop/core/connection_error.dart';
 
 void main() {
   test('TLS pairing, clipboard, file transfer, replay protection and revocation', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-test-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-test-');
     final received = <ClipboardPayload>[];
     final activities = <Activity>[];
     var approvals = 0;

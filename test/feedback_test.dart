@@ -4,15 +4,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/android_folders.dart';
-import 'package:nearbridge/core/controller.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/core/node.dart';
-import 'package:nearbridge/core/photo_backup.dart';
-import 'package:nearbridge/core/shared_folders.dart';
-import 'package:nearbridge/core/shared_files.dart';
-import 'package:nearbridge/core/transfer_queue.dart';
-import 'package:nearbridge/ui/app.dart';
+import 'package:linkindrop/core/android_folders.dart';
+import 'package:linkindrop/core/controller.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/core/node.dart';
+import 'package:linkindrop/core/photo_backup.dart';
+import 'package:linkindrop/core/shared_folders.dart';
+import 'package:linkindrop/core/shared_files.dart';
+import 'package:linkindrop/core/transfer_queue.dart';
+import 'package:linkindrop/ui/app.dart';
 
 class _RealHttp extends HttpOverrides {}
 
@@ -44,7 +44,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('disabling photos interrupts active backups, preserves manual pauses and normal transfers', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-backup-toggle-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-backup-toggle-');
     final blocked = Completer<void>();
     final started = Completer<void>();
     final normalDone = Completer<void>();
@@ -83,7 +83,7 @@ void main() {
   });
 
   test('disabling backup during an awaited directory listing cannot enqueue photos', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-scan-toggle-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-scan-toggle-');
     final provider = _SlowFolders();
     final sources = SharedFolders(root, documents: provider);
     final queued = <TransferJob>[];
@@ -112,8 +112,8 @@ void main() {
 
   test('desktop browses Android document trees and persistent individual document grants over TLS', () async {
     await HttpOverrides.runWithHttpOverrides(() async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-android-browse-');
-    const channel = MethodChannel('nearbridge/system');
+    final root = await Directory.systemTemp.createTemp('linkindrop-android-browse-');
+    const channel = MethodChannel('linkindrop/system');
     final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     var reads = 0;
     var revoked = false;
@@ -182,7 +182,7 @@ void main() {
       enqueue: (_) async {}, available: (_) => false, changed: () {});
     for (final width in [320.0, 390.0, 800.0, 1100.0]) {
       await tester.binding.setSurfaceSize(Size(width, 844));
-      await tester.pumpWidget(NearbridgeApp(key: ValueKey(width), controller: controller, start: false));
+      await tester.pumpWidget(LinkInDropApp(key: ValueKey(width), controller: controller, start: false));
       await tester.pumpAndSettle();
       final scroll = tester.state<ScrollableState>(find.byType(Scrollable).first).position;
       final extent = scroll.maxScrollExtent;

@@ -3,15 +3,15 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/core/connection_error.dart';
-import 'package:nearbridge/core/node.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/core/connection_error.dart';
+import 'package:linkindrop/core/node.dart';
 
 import 'support/relay_server.dart';
 
 void main() {
   test('pinned TLS pairing and clipboard travel through the internet relay', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-relay-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-relay-');
     RelayServer? fixture;
     Process? process;
     final received = <ClipboardPayload>[];

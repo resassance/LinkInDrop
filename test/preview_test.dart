@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:nearbridge/core/file_preview.dart';
-import 'package:nearbridge/core/shared_folders.dart';
+import 'package:linkindrop/core/file_preview.dart';
+import 'package:linkindrop/core/shared_folders.dart';
 
 void main() {
   test('thumbnail bounds both dimensions and text previews have a byte limit', () async {

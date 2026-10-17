@@ -1,4 +1,4 @@
-package dev.resassance.nearbridge
+package dev.resassance.linkindrop
 
 import android.database.Cursor
 import android.database.MatrixCursor

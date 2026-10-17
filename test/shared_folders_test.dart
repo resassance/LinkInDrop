@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/core/shared_folders.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/core/shared_folders.dart';
 
 void main() {
   test('folder grants persist, include new children and revoke the whole tree', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-folders-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-folders-');
     try {
       final private = await Directory('${root.path}/private').create();
       final shared = await Directory('${root.path}/shared').create();
@@ -40,7 +40,7 @@ void main() {
   });
 
   test('paths, symbolic links and application-private descendants cannot escape grants', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-boundary-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-boundary-');
     try {
       final private = await Directory('${root.path}/private').create();
       await File('${private.path}/identity.json').writeAsString('secret');
@@ -73,7 +73,7 @@ void main() {
   });
 
   test('large directories are paged without silently omitting children', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-pages-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-pages-');
     try {
       final private = await Directory('${root.path}/private').create();
       final shared = await Directory('${root.path}/shared').create();

@@ -21,8 +21,8 @@ import '../l10n/app_strings.dart';
 import 'app_theme.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
-class NearbridgeApp extends StatelessWidget {
-  const NearbridgeApp({super.key, required this.controller, this.start = true});
+class LinkInDropApp extends StatelessWidget {
+  const LinkInDropApp({super.key, required this.controller, this.start = true});
   final BridgeController controller;
   final bool start;
 
@@ -872,7 +872,7 @@ class _ScanScreenState extends State<ScanScreen> {
       if (done) return;
       for (final barcode in capture.barcodes) {
         final value = barcode.rawValue;
-        if (value != null && value.startsWith('nearbridge://pair/')) {
+        if (value != null && value.startsWith('linkindrop://pair/')) {
           done = true;
           Navigator.pop(context, value);
           break;
