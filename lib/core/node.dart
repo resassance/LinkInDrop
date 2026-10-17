@@ -21,12 +21,13 @@ import 'release_info.dart';
 import 'package:crypto/crypto.dart';
 
 class BridgeNode {
-  BridgeNode({required this.directory, required this.name,
+  BridgeNode({required Directory directory, required this.name,
     required this.onPairRequest, required this.onClipboard, required this.onActivity,
     required this.onChanged, this.preferredPort = 45831,
-    this.discoveryEnabled = true, this.folderProvider});
+    this.discoveryEnabled = true, this.folderProvider}) : _directory = directory;
 
-  final Directory directory;
+  Directory _directory;
+  Directory get directory => _directory;
   String name;
   final int preferredPort;
   final bool discoveryEnabled;
@@ -85,6 +86,8 @@ class BridgeNode {
 
   Future<void> start({String? destination, String conflictPolicy = "rename", bool sortReceived = false}) async {
     _stopping = false;
+    await directory.create(recursive: true);
+    _directory = Directory(await directory.resolveSymbolicLinks());
     identity = await Identity.load(directory);
     await inbox.create(recursive: true);
     sharedFiles = SharedFiles(directory, documents: folderProvider);
@@ -973,7 +976,8 @@ class BridgeNode {
       }
     } on InsufficientSpace {
       _respond(request, 507, {'error': localizeMessage("Недостаточно свободного места у получателя")});
-    } on FileSystemException {
+    } on FileSystemException catch (error) {
+      onActivity(Activity(localizeMessage("Ошибка передачи"), '$error', error: true));
       _respond(request, 404, {'error': localizeMessage("Папка или файл недоступны. Обновите список.")});
     } on FormatException {
       _respond(request, 400, {'error': 'Invalid payload'});
