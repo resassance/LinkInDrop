@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/github-script@v7
+        id: verify
         env:
           BUILD_RUN: ${{ inputs.run_id }}
           RELEASE_TAG: ${{ inputs.tag }}
@@ -31,8 +32,10 @@ jobs:
             if (run.conclusion !== 'success' || run.name !== 'Build' || run.head_branch !== 'main') {
               throw new Error('Build must have passed on main');
             }
-            const {data: release} = await github.rest.repos.getReleaseByTag({owner, repo, tag});
-            if (!release.prerelease) throw new Error('Expected an alpha release');
+            const releases = await github.paginate(github.rest.repos.listReleases, {owner, repo, per_page: 100});
+            const release = releases.find(item => item.tag_name === tag);
+            if (!release || !release.prerelease || !release.draft) throw new Error('Expected a draft alpha release');
+            core.setOutput('release_id', release.id);
             const {data: ref} = await github.rest.git.getRef({owner, repo, ref: `tags/${tag}`});
             let target = ref.object;
             while (target.type === 'tag') {
@@ -58,9 +61,21 @@ jobs:
       - name: Verify packaged checksums
         working-directory: dist
         run: sha256sum --check *.sha256
-      - uses: softprops/action-gh-release@v2
+      - name: Upload verified packages to the draft
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ steps.verify.outputs.release_id }}
         with:
-          tag_name: ${{ inputs.tag }}
-          files: dist/*
-          fail_on_unmatched_files: true
-          draft: true
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const release_id = Number(process.env.RELEASE_ID);
+            const files = fs.readdirSync('dist', {withFileTypes: true}).filter(item => item.isFile());
+            if (files.length !== 6) throw new Error('Expected three packages and three checksum files');
+            for (const file of files) {
+              const data = fs.readFileSync(path.join('dist', file.name));
+              await github.rest.repos.uploadReleaseAsset({owner, repo, release_id, name: file.name,
+                data, headers: {'content-type': 'application/octet-stream', 'content-length': data.length}});
+            }
