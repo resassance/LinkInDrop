@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/ui/remote_files_dialog.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/ui/remote_files_dialog.dart';
 
 void main() {
   testWidgets('compact remote folder actions fit long names', (tester) async {

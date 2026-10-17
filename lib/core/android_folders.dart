@@ -10,7 +10,7 @@ import 'shared_folders.dart';
 class AndroidFolders implements FolderProvider {
   const AndroidFolders();
   static final Map<String, int> _references = {};
-  static const channel = MethodChannel('nearbridge/system');
+  static const channel = MethodChannel('linkindrop/system');
 
   Future<T> _translate<T>(Future<T> Function() operation) async {
     try { return await operation(); } on PlatformException catch (error) {

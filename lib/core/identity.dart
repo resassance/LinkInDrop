@@ -11,10 +11,10 @@ Map<String, String> generateIdentity() {
   final private = keys.privateKey as RSAPrivateKey;
   final public = keys.publicKey as RSAPublicKey;
   final id = randomToken(16);
-  final csr = X509Utils.generateRsaCsrPem({'CN': 'nearbridge-$id'}, private, public);
+  final csr = X509Utils.generateRsaCsrPem({'CN': 'linkindrop-$id'}, private, public);
   return {'id': id, 'key': CryptoUtils.encodeRSAPrivateKeyToPem(private),
     'certificate': X509Utils.generateSelfSignedCertificate(private, csr, 3650,
-      sans: ['nearbridge.local'], cA: false)};
+      sans: ['linkindrop.local'], cA: false)};
 }
 
 class Identity {

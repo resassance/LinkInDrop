@@ -3,13 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/core/node.dart';
-import 'package:nearbridge/core/receive_storage.dart';
-import 'package:nearbridge/core/release_info.dart';
-import 'package:nearbridge/core/shared_folders.dart';
-import 'package:nearbridge/core/transfer_queue.dart';
-import 'package:nearbridge/core/photo_backup.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/core/node.dart';
+import 'package:linkindrop/core/receive_storage.dart';
+import 'package:linkindrop/core/release_info.dart';
+import 'package:linkindrop/core/shared_folders.dart';
+import 'package:linkindrop/core/transfer_queue.dart';
+import 'package:linkindrop/core/photo_backup.dart';
 
 void main() {
   test('release ordering distinguishes stable versions, alpha versions and numbers', () {
@@ -23,7 +23,7 @@ void main() {
   });
 
   test('receive policies preserve, rename or replace files and verify actual contents', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-storage-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-storage-');
     try {
       final private = await Directory('${root.path}/private').create();
       final inbox = await Directory('${private.path}/inbox').create();
@@ -57,7 +57,7 @@ void main() {
   });
 
   test('receive destination rejects a symlinked parent', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-storage-link-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-storage-link-');
     try {
       final private = await Directory('${root.path}/private').create();
       final inbox = await Directory('${private.path}/inbox').create();
@@ -73,7 +73,7 @@ void main() {
   });
 
   test('a parent receive directory cannot expose private app data to incoming files', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-private-receive-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-private-receive-');
     try {
       final private = await Directory('${root.path}/private').create();
       final inbox = await Directory('${private.path}/inbox').create();
@@ -92,7 +92,7 @@ void main() {
   });
 
   test('queue priorities apply to folder groups and survive serialization', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-priority-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-priority-');
     final executions = <String>[];
     final done = Completer<void>();
     final queue = TransferQueue(directory: root, execute: (job, progress) async { executions.add(job.name); progress(1); },
@@ -113,7 +113,7 @@ void main() {
   });
 
   test('backup receipts verify remote copies, restore files and redact diagnostics', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-receipts-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-receipts-');
     BridgeNode make(String name) => BridgeNode(directory: Directory('${root.path}/$name'), name: name,
       preferredPort: 0, discoveryEnabled: false, onPairRequest: (_) async => true,
       onClipboard: (_) async {}, onActivity: (_) {}, onChanged: () {});
@@ -142,7 +142,7 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('photo verification makes a lost copy eligible for repair without changing originals', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-backup-verify-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-backup-verify-');
     final private = await Directory('${root.path}/private').create();
     final photos = await Directory('${root.path}/Camera').create();
     final original = await File('${photos.path}/photo.jpg').writeAsString('original-photo');
@@ -165,7 +165,7 @@ void main() {
   });
 
   test('free space preflight rejects an impossible reservation before writing data', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-space-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-space-');
     try {
       final available = await freeBytes(root.path);
       expect(available, isNotNull);
@@ -175,7 +175,7 @@ void main() {
   });
 
   test('shared files larger than 2 GiB support 64 bit ranged offsets', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-large-range-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-large-range-');
     final node = BridgeNode(directory: Directory('${root.path}/node'), name: 'large', preferredPort: 0,
       discoveryEnabled: false, onPairRequest: (_) async => true, onClipboard: (_) async {}, onActivity: (_) {}, onChanged: () {});
     final client = HttpClient(context: SecurityContext(withTrustedRoots: false))..badCertificateCallback = (_, __, ___) => true;
@@ -192,7 +192,7 @@ void main() {
         incomingToken: randomToken(), outgoingToken: randomToken());
       node.peers[peer.id] = peer;
       final request = await client.getUrl(Uri.parse('https://127.0.0.1:${node.port}/files/${entry.id}'));
-      request.headers.set('X-Nearbridge-Id', peer.id);
+      request.headers.set('X-LinkInDrop-Id', peer.id);
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.incomingToken}');
       request.headers.set(HttpHeaders.rangeHeader, 'bytes=${size - 16}-${size - 1}');
       final response = await request.close();

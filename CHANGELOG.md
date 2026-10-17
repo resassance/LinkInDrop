@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0-alpha.4
+
+- Introduce the LinkInDrop desktop/mobile design with selected-file previews and explicit send confirmation.
+- Add persistent light/dark/system themes and Russian/English/system language preferences.
+- Use one shared logo for the app, Android launcher, desktop icons and tray.
+- Rename the Dart package, Android application ID, pairing scheme, protocol headers, discovery identity and package outputs.
+- Start a separate application profile and pairing protocol version 2; install on every device and pair again.
+- Publish English and Russian READMEs with navigation, technology badges, setup and build instructions.
+- Preserve the permanent Android signing key under the new key alias and verify the packaged certificate.
+- Require a successful main-branch build at the exact release tag before uploading release artifacts.
+
 ## 0.3.0-alpha.3
 
 - Open the receive directory from the transfer panel; expose the Android private inbox through a read-only DocumentsProvider.

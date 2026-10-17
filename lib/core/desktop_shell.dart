@@ -22,15 +22,7 @@ class DesktopShell with TrayListener, WindowListener {
     if (!Platform.isWindows && !Platform.isLinux) return;
     await windowManager.ensureInitialized();
     windowManager.addListener(this);
-    launchAtStartup.setup(appName: 'Nearbridge', appPath: Platform.resolvedExecutable);
-    final legacyStartup = await launchAtStartup.isEnabled();
     launchAtStartup.setup(appName: 'LinkInDrop', appPath: Platform.resolvedExecutable);
-    if (legacyStartup) {
-      await launchAtStartup.enable();
-      launchAtStartup.setup(appName: 'Nearbridge', appPath: Platform.resolvedExecutable);
-      await launchAtStartup.disable();
-      launchAtStartup.setup(appName: 'LinkInDrop', appPath: Platform.resolvedExecutable);
-    }
     startupEnabled = await launchAtStartup.isEnabled();
     try {
       final extension = Platform.isWindows ? 'ico' : 'png';

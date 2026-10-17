@@ -1,4 +1,4 @@
-package dev.resassance.nearbridge
+package dev.resassance.linkindrop
 
 import android.content.Context
 import android.net.Uri
@@ -73,12 +73,12 @@ class ReceiveFiles(private val context: Context) {
         val privateRoot = context.filesDir.canonicalFile
         if (!source.canonicalPath.startsWith(privateRoot.path + File.separator)) throw SecurityException("Invalid source")
         val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase(Locale.ROOT)) ?: "application/octet-stream"
-        val temporary = DocumentsContract.createDocument(resolver, parent, mime, ".nearbridge-${UUID.randomUUID()}") ?: throw IllegalArgumentException(NativeStrings.text(context, "Не удалось создать файл"))
+        val temporary = DocumentsContract.createDocument(resolver, parent, mime, ".linkindrop-${UUID.randomUUID()}") ?: throw IllegalArgumentException(NativeStrings.text(context, "Не удалось создать файл"))
         var oldBackup: Uri? = null
         try {
             resolver.openOutputStream(temporary, "wt")?.use { output -> source.inputStream().use { it.copyTo(output, 65536) } } ?: throw IllegalArgumentException(NativeStrings.text(context, "Нет разрешения на запись"))
             if (digest(temporary) != call.argument<String>("digest")) throw IllegalStateException(NativeStrings.text(context, "Контрольная сумма копии не совпала"))
-            if (existing != null) oldBackup = DocumentsContract.renameDocument(resolver, existing.first, ".nearbridge-old-${UUID.randomUUID()}") ?: throw IllegalArgumentException(NativeStrings.text(context, "Не удалось сохранить предыдущий файл"))
+            if (existing != null) oldBackup = DocumentsContract.renameDocument(resolver, existing.first, ".linkindrop-old-${UUID.randomUUID()}") ?: throw IllegalArgumentException(NativeStrings.text(context, "Не удалось сохранить предыдущий файл"))
             val target = DocumentsContract.renameDocument(resolver, temporary, name) ?: throw IllegalArgumentException(NativeStrings.text(context, "Не удалось завершить получение"))
             oldBackup?.let { try { DocumentsContract.deleteDocument(resolver, it) } catch (_: Exception) {} }
             return mapOf("location" to target.toString(), "skipped" to false)

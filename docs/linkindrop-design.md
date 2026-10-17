@@ -2,7 +2,7 @@
 
 ## Status
 
-The user approved the visual direction and authorized implementation. On 2026-10-17, the user authorized GitHub Actions validation on the separate `design/linkindrop` branch. This authorization does not include merging into `main`, tagging or publishing a release. Flutter analysis, all 62 Flutter tests and Windows/Linux/Android release builds passed. Rendered design QA still requires screenshots and comparison against the approved references.
+The selected design is implemented. The user authorized full project and protocol renaming, merging into main, repository renaming and a new prerelease. Android uses a separate application ID and profile; pairing must be repeated on every device. Release validation uses a fresh main-branch Actions build. Rendered design comparison remains pending.
 
 ## Approved direction
 
@@ -57,17 +57,17 @@ Mock data is illustrative. The three files in the mobile preview total 12.4 MB; 
 
 - Preserve existing pairing, transfer, remote file browsing, background operation and VPN-routing behavior.
 - Do not add source-code comments.
-- Do not rename package or application identifiers as part of a display-name change without checking update and pairing compatibility.
-- Validate locally or on the authorized Actions branch. Merging into `main`, tagging and release publication still require separate user authorization.
+- The complete identifier rename is intentional and incompatible with previous installations; keep the migration notice in both READMEs and release notes.
+- The user authorized main-branch merging and prerelease publication. Publish only after the renamed application passes a fresh main-branch build.
 
 ## Local implementation checks
 
-Current visual verification status: blocked pending rendered screenshots. Static resource checks, the bootstrap integration test, two relay-server tests, Flutter analysis, all 62 Flutter tests and all three platform builds passed in [GitHub Actions](https://github.com/resassance/nearbridge/actions/runs/39002395492). The Android APK uses the pinned permanent signing certificate. See `../design-qa.md` for scope and evidence. No release has been published.
+Visual comparison is pending. See `../design-qa.md` for the scope and automated validation evidence. The renamed release requires a fresh successful main-branch Actions build.
 
 Current verification status: blocked. Static checks and the bootstrap integration test passed, but Flutter analysis, tests, native builds and visual comparison remain unverified because a usable Flutter runtime could not be initialized. See `../design-qa.md` for the exact scope and blockers. No build or release has been produced.
 
 - `python tool/check_design.py` validates translation coverage, template arguments, generated translation output, Android XML, launcher sizes and shared assets.
 - `python -m unittest tool/bootstrap_test.py` validates native asset integration and preserves platform application identifiers.
-- `flutter test` includes selection confirmation, failed-queue retention, duplicate protection, theme/language persistence, system-language fallback, header alignment and legacy profile reuse. These tests require Flutter 3.32.8.
+- `flutter test` includes selection confirmation, failed-queue retention, duplicate protection, theme/language persistence, system-language fallback, header alignment and explicit send confirmation. These tests require Flutter 3.32.8.
 - `tool/generate_icons.py` regenerates packaged icon sizes from `assets/icons/source.png` and requires Pillow. The generated platform assets are included, so packaging does not require Pillow.
 - `python tool/generate_translations.py` regenerates the Dart dictionary from the Russian and English JSON files.

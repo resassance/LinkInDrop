@@ -3,11 +3,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/controller.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/core/node.dart';
-import 'package:nearbridge/l10n/messages.dart';
-import 'package:nearbridge/ui/app.dart';
+import 'package:linkindrop/core/controller.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/core/node.dart';
+import 'package:linkindrop/l10n/messages.dart';
+import 'package:linkindrop/ui/app.dart';
 
 class _MobileController extends BridgeController {
   @override
@@ -55,7 +55,7 @@ void main() {
     final file = (await tester.runAsync(() => File('${root.path}/Заметки.txt').writeAsString('hello')))!;
     await tester.runAsync(() => controller.stageFiles([file.path]));
     await tester.binding.setSurfaceSize(const Size(1440, 1024));
-    await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
+    await tester.pumpWidget(LinkInDropApp(controller: controller, start: false));
     await tester.tap(find.byKey(const ValueKey('theme-dark')));
     await tester.pumpAndSettle();
     expect(Theme.of(tester.element(find.byType(Scaffold).first)).brightness, Brightness.dark);
@@ -81,7 +81,7 @@ void main() {
     await tester.runAsync(() => controller.stageFiles([file.path]));
     expect(controller.sent, isEmpty);
     await tester.binding.setSurfaceSize(const Size(1100, 900));
-    await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
+    await tester.pumpWidget(LinkInDropApp(controller: controller, start: false));
     expect(find.text('notes.txt'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('send-selection')));
     await tester.pumpAndSettle();
@@ -101,7 +101,7 @@ void main() {
           controller.languagePreference = language;
           controller.themePreference = theme;
           await tester.binding.setSurfaceSize(Size(width, 844));
-          await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
+          await tester.pumpWidget(LinkInDropApp(controller: controller, start: false));
           await tester.pumpAndSettle();
           final title = find.text(language == 'ru' ? 'Передача' : 'Transfer').first;
           final shortcut = find.byKey(const ValueKey('received-shortcut'));
@@ -120,7 +120,7 @@ void main() {
     final controller = BridgeController()..loading = false;
     for (final entry in {'ru': 'К отправке', 'en': 'Ready to send', 'fr': 'Ready to send'}.entries) {
       tester.binding.platformDispatcher.localesTestValue = [Locale(entry.key)];
-      await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
+      await tester.pumpWidget(LinkInDropApp(controller: controller, start: false));
       await tester.pumpAndSettle();
       expect(find.text(entry.key == 'ru' ? 'Выбрать файлы' : 'Choose files'), findsOneWidget);
       expect(tester.takeException(), isNull);

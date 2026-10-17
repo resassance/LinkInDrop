@@ -2,13 +2,13 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/android_folders.dart';
-import 'package:nearbridge/core/models.dart';
+import 'package:linkindrop/core/android_folders.dart';
+import 'package:linkindrop/core/models.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const provider = AndroidFolders();
-  const channel = MethodChannel('nearbridge/system');
+  const channel = MethodChannel('linkindrop/system');
   final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
   tearDown(() => messenger.setMockMethodCallHandler(channel, null));

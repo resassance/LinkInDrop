@@ -15,7 +15,7 @@ class InsufficientSpace implements Exception {
 }
 
 Future<int?> freeBytes(String path) async {
-  if (Platform.isAndroid) return const MethodChannel('nearbridge/system').invokeMethod<int>('freeBytes', {'path': path});
+  if (Platform.isAndroid) return const MethodChannel('linkindrop/system').invokeMethod<int>('freeBytes', {'path': path});
   final result = Platform.isWindows
     ? await Process.run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', r'(Get-Item -LiteralPath $env:NB_STORAGE_PATH).PSDrive.Free'], environment: {'NB_STORAGE_PATH': path})
     : await Process.run('df', ['-Pk', path]);
@@ -42,7 +42,7 @@ class ReceiveStorage {
   final Map<String, String> _verifiedVersions = {};
   Future<void> _saving = Future.value();
   Future<void> _delivering = Future.value();
-  final channel = const MethodChannel('nearbridge/system');
+  final channel = const MethodChannel('linkindrop/system');
 
   Future<void> _protectDestination(String root, String relative) async {
     if (await Directory(root).resolveSymbolicLinks() != root) throw const FileSystemException('Unsafe destination');

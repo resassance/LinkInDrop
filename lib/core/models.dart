@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'relay_transport.dart';
 
-const protocolVersion = 1;
+const protocolVersion = 2;
 const maxClipboardBytes = 8 * 1024 * 1024;
 const maxTextBytes = 256 * 1024;
 const maxFileBytes = 8 * 1024 * 1024 * 1024 * 1024;
@@ -82,7 +82,7 @@ class PairInvite {
   final String? relayUrl;
   final String? relayRoom;
 
-  String encode() => 'nearbridge://pair/${base64Url.encode(utf8.encode(jsonEncode({
+  String encode() => 'linkindrop://pair/${base64Url.encode(utf8.encode(jsonEncode({
     'v': protocolVersion, 'id': id, 'name': name, 'host': host, 'port': port,
     'fingerprint': fingerprint, 'secret': secret,
     'expires': expiresAt.millisecondsSinceEpoch,
@@ -91,11 +91,11 @@ class PairInvite {
 
   static PairInvite parse(String value) {
     final text = value.trim();
-    if (text.length > 4096 || !text.startsWith('nearbridge://pair/')) {
+    if (text.length > 4096 || !text.startsWith('linkindrop://pair/')) {
       throw FormatException(localizeMessage("Неверный код подключения"));
     }
     final data = jsonDecode(utf8.decode(base64Url.decode(
-      base64Url.normalize(text.substring('nearbridge://pair/'.length)))));
+      base64Url.normalize(text.substring('linkindrop://pair/'.length)))));
     if (data is! Map<String, dynamic> || data['v'] != protocolVersion ||
         data['host'] is! String || !isConnectionHost(data['host'] as String) ||
         data['port'] is! int || (data['port'] as int) < 1 ||

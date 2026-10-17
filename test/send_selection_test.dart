@@ -2,9 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/app_directory.dart';
-import 'package:nearbridge/core/controller.dart';
-import 'package:nearbridge/core/send_selection.dart';
+import 'package:linkindrop/core/controller.dart';
+import 'package:linkindrop/core/send_selection.dart';
 
 void main() {
   test('selection deduplicates and preserves files on queue failure', () async {
@@ -78,17 +77,4 @@ void main() {
     } finally { controller.dispose(); await root.delete(recursive: true); }
   });
 
-  test('rebrand reuses legacy identity without copying or replacing it', () async {
-    final root = await Directory.systemTemp.createTemp('linkindrop-profile-');
-    try {
-      final legacy = await Directory('${root.path}/nearbridge').create();
-      await File('${legacy.path}/identity.json').writeAsString('old-identity');
-      final proposed = Directory('${root.path}/LinkInDrop');
-      expect((await resolveAppDirectory(proposed)).path, legacy.path);
-      await proposed.create();
-      await File('${proposed.path}/identity.json').writeAsString('existing-new-identity');
-      expect((await resolveAppDirectory(proposed)).path, proposed.path);
-      expect(await File('${legacy.path}/identity.json').readAsString(), 'old-identity');
-    } finally { await root.delete(recursive: true); }
-  });
 }

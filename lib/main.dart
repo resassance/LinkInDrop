@@ -9,5 +9,5 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   final controller = BridgeController();
   unawaited(controller.start());
-  runApp(NearbridgeApp(controller: controller, start: false));
+  runApp(LinkInDropApp(controller: controller, start: false));
 }
