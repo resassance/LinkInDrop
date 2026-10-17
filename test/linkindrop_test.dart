@@ -33,37 +33,37 @@ void main() {
   });
 
   testWidgets('theme and language changes persist and do not discard the selected files', (tester) async {
-    final root = await Directory.systemTemp.createTemp('linkindrop-settings-');
+    final root = (await tester.runAsync(() => Directory.systemTemp.createTemp('linkindrop-settings-')))!;
     final controller = BridgeController()..loading = false..directory = root..languagePreference = 'en';
-    final file = await File('${root.path}/Заметки.txt').writeAsString('hello');
-    await controller.stageFiles([file.path]);
+    final file = (await tester.runAsync(() => File('${root.path}/Заметки.txt').writeAsString('hello')))!;
+    await tester.runAsync(() => controller.stageFiles([file.path]));
     await tester.binding.setSurfaceSize(const Size(1440, 1024));
     await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
     await tester.tap(find.byKey(const ValueKey('theme-dark')));
     await tester.pumpAndSettle();
     expect(Theme.of(tester.element(find.byType(Scaffold).first)).brightness, Brightness.dark);
-    await controller.setAppearance(language: 'ru');
+    await tester.runAsync(() => controller.setAppearance(language: 'ru'));
     await tester.pumpAndSettle();
     expect(find.text('К отправке'), findsOneWidget);
     expect(find.text('Заметки.txt'), findsOneWidget);
-    final saved = jsonDecode(await File('${root.path}/settings.json').readAsString()) as Map;
+    final saved = jsonDecode((await tester.runAsync(() => File('${root.path}/settings.json').readAsString()))!) as Map;
     expect(saved['theme'], 'dark');
     expect(saved['language'], 'ru');
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
-    await root.delete(recursive: true);
+    await tester.runAsync(() => root.delete(recursive: true));
     await tester.binding.setSurfaceSize(null);
   });
 
   testWidgets('selection requires the explicit transfer action', (tester) async {
-    final root = await Directory.systemTemp.createTemp('linkindrop-confirm-');
+    final root = (await tester.runAsync(() => Directory.systemTemp.createTemp('linkindrop-confirm-')))!;
     final controller = _SendController()..loading = false..languagePreference = 'en';
-    final file = await File('${root.path}/notes.txt').writeAsString('hello');
+    final file = (await tester.runAsync(() => File('${root.path}/notes.txt').writeAsString('hello')))!;
     controller.node = BridgeNode(directory: root, name: 'test', onPairRequest: (_) async => false,
       onClipboard: (_) async {}, onActivity: (_) {}, onChanged: () {});
     controller.node!.peers['phone'] = Peer(id: 'phone', name: 'Телефон', host: '127.0.0.1', port: 1,
       fingerprint: '', incomingToken: '', outgoingToken: '')..online = true;
-    await controller.stageFiles([file.path]);
+    await tester.runAsync(() => controller.stageFiles([file.path]));
     expect(controller.sent, isEmpty);
     await tester.binding.setSurfaceSize(const Size(1100, 900));
     await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
@@ -74,7 +74,7 @@ void main() {
     expect(controller.selection.items, isEmpty);
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
-    await root.delete(recursive: true);
+    await tester.runAsync(() => root.delete(recursive: true));
     await tester.binding.setSurfaceSize(null);
   });
 
