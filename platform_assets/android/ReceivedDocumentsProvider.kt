@@ -28,7 +28,7 @@ class ReceivedDocumentsProvider : DocumentsProvider() {
     private fun mime(file: File): String = if (file.isDirectory) DocumentsContract.Document.MIME_TYPE_DIR else MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
     private fun row(cursor: MatrixCursor, file: File) {
         val values = mapOf<String, Any>(DocumentsContract.Document.COLUMN_DOCUMENT_ID to id(file),
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME to if (file == root) "Nearbridge — Полученные" else file.name,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME to if (file == root) NativeStrings.text(context!!, "LinkInDrop — Полученные") else file.name,
             DocumentsContract.Document.COLUMN_MIME_TYPE to mime(file), DocumentsContract.Document.COLUMN_FLAGS to 0,
             DocumentsContract.Document.COLUMN_SIZE to if (file.isFile) file.length() else 0L, DocumentsContract.Document.COLUMN_LAST_MODIFIED to file.lastModified())
         val row = cursor.newRow()
@@ -39,7 +39,7 @@ class ReceivedDocumentsProvider : DocumentsProvider() {
             DocumentsContract.Root.COLUMN_TITLE, DocumentsContract.Root.COLUMN_FLAGS, DocumentsContract.Root.COLUMN_ICON, DocumentsContract.Root.COLUMN_MIME_TYPES, DocumentsContract.Root.COLUMN_AVAILABLE_BYTES)
         val cursor = MatrixCursor(columns)
         val values = mapOf<String, Any>(DocumentsContract.Root.COLUMN_ROOT_ID to "received", DocumentsContract.Root.COLUMN_DOCUMENT_ID to "received",
-            DocumentsContract.Root.COLUMN_TITLE to "Nearbridge — Полученные", DocumentsContract.Root.COLUMN_FLAGS to DocumentsContract.Root.FLAG_LOCAL_ONLY,
+            DocumentsContract.Root.COLUMN_TITLE to NativeStrings.text(context!!, "LinkInDrop — Полученные"), DocumentsContract.Root.COLUMN_FLAGS to DocumentsContract.Root.FLAG_LOCAL_ONLY,
             DocumentsContract.Root.COLUMN_ICON to R.drawable.tile_icon, DocumentsContract.Root.COLUMN_MIME_TYPES to "*/*", DocumentsContract.Root.COLUMN_AVAILABLE_BYTES to root.usableSpace)
         val row = cursor.newRow()
         for (column in columns) row.add(column, values[column])

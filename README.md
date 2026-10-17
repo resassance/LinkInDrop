@@ -1,4 +1,8 @@
-# Nearbridge
+# LinkInDrop
+
+The LinkInDrop redesign is currently local and unpublished. Existing GitHub releases still use the previous Nearbridge interface and executable names. New local builds use `LinkInDrop.exe` on Windows and `LinkInDrop/LinkInDrop` in the Linux archive.
+
+The redesign adds compact desktop/mobile navigation, selected-file previews with explicit confirmation, light/dark/system themes and Russian/English/system language preferences. Dropped files and Android shares are staged before transfer. Real filenames and user content are preserved.
 
 Shared clipboard and file transfers for Android, Windows and Linux.
 
@@ -22,15 +26,15 @@ Keep the app running. Use one local network or a private VPN connecting both dev
 
 Codes expire after five minutes and are single-use. Internet codes also contain the relay endpoint and an unguessable tunnel identifier. Closing the QR window does not revoke the copied code. Share them only with your own devices. If there are several network adapters, choose the address belonging to the same network as the other device.
 
-New QR codes include alternative adapter addresses. Nearbridge probes them concurrently with certificate pinning, so an unreachable VPN adapter does not delay a reachable LAN adapter. Paired devices exchange updated addresses over authenticated connections and automatically reconnect through a working endpoint. Network probes have bounded timeouts and a short retry. Clipboard sends retry transient network failures with the same deduplicated message ID. A failed automatic clipboard send remains eligible for the next poll.
+New QR codes include alternative adapter addresses. LinkInDrop probes them concurrently with certificate pinning, so an unreachable VPN adapter does not delay a reachable LAN adapter. Paired devices exchange updated addresses over authenticated connections and automatically reconnect through a working endpoint. Network probes have bounded timeouts and a short retry. Clipboard sends retry transient network failures with the same deduplicated message ID. A failed automatic clipboard send remains eligible for the next poll.
 
-If pairing still times out, allow local-network traffic in VPN/WARP on both devices. WARP's local-network exclusion and a zapret filter that excludes private/VPN subnets are configuration requirements when those tools intercept the connection. Nearbridge uses direct sockets and never disables certificate checks. It cannot override a VPN kill switch, OS firewall, or packet filter that blocks every route. Connection errors include the destination address and can be tapped to show full details. Scan the PC's QR with the phone, then approve on the PC.
+If pairing still times out, allow local-network traffic in VPN/WARP on both devices. WARP's local-network exclusion and a zapret filter that excludes private/VPN subnets are configuration requirements when those tools intercept the connection. LinkInDrop uses direct sockets and never disables certificate checks. It cannot override a VPN kill switch, OS firewall, or packet filter that blocks every route. Connection errors include the destination address and can be tapped to show full details. Scan the PC's QR with the phone, then approve on the PC.
 
 ## Clipboard
 
 Text and PNG images are transferred between paired devices. Automatic sending and receiving can be disabled globally or per device. Existing clipboard contents are not automatically sent on first connection; **Отправить буфер** sends them explicitly.
 
-On Android 10+, ordinary apps cannot read another app's clipboard in the background. This release does not bypass that restriction. Open Nearbridge and choose **Отправить буфер**, use the notification / Quick Settings tile, or share content to Nearbridge. The tile opens the app before reading the clipboard. Automatic monitoring on Android runs only while Nearbridge is open. The foreground transfer service retains the Flutter engine after the window closes. Optional boot recovery and package-update recovery restart it. Force-stop, Doze and manufacturer battery restrictions can still interrupt availability; use the battery and notification status controls in the app.
+On Android 10+, ordinary apps cannot read another app's clipboard in the background. This release does not bypass that restriction. Open LinkInDrop and choose **Отправить буфер**, use the notification / Quick Settings tile, or share content to LinkInDrop. The tile opens the app before reading the clipboard. Automatic monitoring on Android runs only while LinkInDrop is open. The foreground transfer service retains the Flutter engine after the window closes. Optional boot recovery and package-update recovery restart it. Force-stop, Doze and manufacturer battery restrictions can still interrupt availability; use the battery and notification status controls in the app.
 
 Linux clipboard support depends on the desktop session. GNOME/Wayland background clipboard monitoring is not guaranteed in this alpha. There is no claim of universal Wayland support.
 
@@ -46,7 +50,7 @@ Files support 64-bit sizes and offsets up to 8 TiB each, subject to filesystem l
 
 On the source, open **Мои файлы и папки**, choose **Добавить файлы** or **Добавить папку**, and enable **Разрешить доступ к моим файлам и папкам**. On the receiver choose **Файлы устройства**. Open folders to navigate, use the download icon for one file or **Скачать папку** for a subtree, and load further pages with **Показать ещё**.
 
-Sharing a folder includes its readable descendants and future files. Up to 50 folders and 200 individual files can be published. Absolute paths, traversal, symbolic links and Nearbridge's private data are excluded from the shared view. Each page contains at most 200 items. Files larger than 8 TiB, virtual Android documents and documents with unknown size are omitted.
+Sharing a folder includes its readable descendants and future files. Up to 50 folders and 200 individual files can be published. Absolute paths, traversal, symbolic links and LinkInDrop's private data are excluded from the shared view. Each page contains at most 200 items. Files larger than 8 TiB, virtual Android documents and documents with unknown size are omitted.
 
 On Android the system picker grants read access to the selected document tree and retains it across restarts. Protected storage roots remain subject to Android's restrictions. Folder contents are streamed rather than copied wholesale into the app. If a document provider disappears or Android revokes permission, choose the folder again.
 
@@ -66,11 +70,11 @@ Choose a source under **Резервное копирование фото**, ch
 
 ### Desktop background operation
 
-Windows/Linux can keep Nearbridge in the system tray when its window closes. The tray menu reopens the window or exits the app. **Запускать вместе с системой** opts into autostart. Tray support depends on the Linux desktop's indicator support; if the tray cannot be created the window uses ordinary close behavior. File drops on a device card enqueue uploads without blocking other controls.
+Windows/Linux can keep LinkInDrop in the system tray when its window closes. The tray menu reopens the window or exits the app. **Запускать вместе с системой** opts into autostart. Tray support depends on the Linux desktop's indicator support; if the tray cannot be created the window uses ordinary close behavior. File drops on a device select it as the recipient and stage the files for explicit confirmation.
 
 ### Internet access without VPN
 
-Set the HTTPS WebSocket address of a Nearbridge relay under **Настроить доступ без VPN**, then pair using the normal QR or connection code. A device without a configured relay adopts the address from the code. The app tries authenticated direct addresses alongside the relay and uses a working route. Both devices only need outgoing connections to the relay; private-network VPN access remains supported.
+Set the HTTPS WebSocket address of a LinkInDrop relay under **Настроить доступ без VPN**, then pair using the normal QR or connection code. A device without a configured relay adopts the address from the code. The app tries authenticated direct addresses alongside the relay and uses a working route. Both devices only need outgoing connections to the relay; private-network VPN access remains supported.
 
 The relay forwards the devices' pinned TLS stream and does not decrypt clipboard or file contents. It can observe IP addresses, timing and traffic volume. The included Node server applies message-size, pending-connection and connection-count limits, with backpressure for binary forwarding. Public endpoints require `wss://`; `ws://` is permitted only on loopback for tests.
 
@@ -128,7 +132,7 @@ MIT License. Copyright 2026 Александр Орлов.
 
 ### Background transfers and Android file access
 
-Enable «Передавать при выключенном экране», allow unrestricted battery operation and notifications, and keep Nearbridge running on the computer (the tray is sufficient). The foreground service holds CPU and Wi-Fi locks while enabled, increasing battery use. Some Android vendors also require allowing autostart. Force-stop requires manually reopening Nearbridge.
+Enable «Передавать при выключенном экране», allow unrestricted battery operation and notifications, and keep LinkInDrop running on the computer (the tray is sufficient). The foreground service holds CPU and Wi-Fi locks while enabled, increasing battery use. Some Android vendors also require allowing autostart. Force-stop requires manually reopening LinkInDrop.
 
 On the phone use «Мои файлы и папки» and the system picker to select files or a folder. Confirm «Использовать эту папку» for a tree. Adding content enables sharing; use the sharing switch to revoke all access temporarily. Individual files selected in older versions should be removed and reselected for persistent permissions.
 
@@ -136,10 +140,10 @@ Turning photo backup off stops the scan and pauses its queued transfers. Turning
 
 ### Compact transfer workspace
 
-Use «Полученные файлы» to open the receive directory. On Android the built-in inbox appears as a read-only Nearbridge document-provider root; a selected external receive tree opens in the system file manager. On desktop the outlined drop zone accepts files and folders; if more than one device is paired, choose the recipient after dropping. Right-click the tray icon for Open or Quit.
+Use «Полученные файлы» to open the receive directory. On Android the built-in inbox appears as a read-only LinkInDrop document-provider root; a selected external receive tree opens in the system file manager. On desktop the outlined drop zone accepts files and folders; if more than one device is paired, choose the recipient after dropping. Right-click the tray icon for Open or Quit.
 
 Loose incoming files are sorted by extension into Фото, Видео, Музыка, Документы, Архивы, Приложения or Другое. «Хранение и подключение» contains the sorting switch. Folder trees, backup layout and existing files are preserved.
 
 ### NekoBox and local Wi-Fi
 
-Keep NekoBox enabled and allow LAN bypass, or exclude Nearbridge (dev.resassance.nearbridge) from VPN app routing. Nearbridge also offers «Nearbridge через Wi-Fi мимо VPN», an optional process-level physical-network binding. It is disabled by default and applies to all Nearbridge traffic, including relay connections and update checks; it does not alter other apps. Wi-Fi/Ethernet is preferred while present, with automatic return to the system route when unavailable. Android VPN lockdown and VPN bypass restrictions still apply. A successful route selection is not proof that the VPN permits the connection.
+Keep NekoBox enabled and allow LAN bypass, or exclude LinkInDrop (dev.resassance.nearbridge) from VPN app routing. LinkInDrop also offers «LinkInDrop через Wi-Fi мимо VPN», an optional process-level physical-network binding. It is disabled by default and applies to all LinkInDrop traffic, including relay connections and update checks; it does not alter other apps. Wi-Fi/Ethernet is preferred while present, with automatic return to the system route when unavailable. Android VPN lockdown and VPN bypass restrictions still apply. A successful route selection is not proof that the VPN permits the connection.

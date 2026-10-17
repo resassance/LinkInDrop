@@ -8,7 +8,7 @@ import android.net.NetworkRequest
 import android.os.Handler
 import android.os.Looper
 
-class LocalNetwork(context: Context, private val changed: () -> Unit) {
+class LocalNetwork(private val context: Context, private val changed: () -> Unit) {
     private val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val handler = Handler(Looper.getMainLooper())
     private var enabled = false
@@ -38,11 +38,11 @@ class LocalNetwork(context: Context, private val changed: () -> Unit) {
         val next = if (enabled) wifi() else null
         if (next == selected && (next == null || manager.boundNetworkForProcess == next)) return
         try {
-            if (!manager.bindProcessToNetwork(next)) { failure = "Android не разрешил прямой маршрут. Проверьте настройки NekoBox и запрет соединений без VPN."; return }
+            if (!manager.bindProcessToNetwork(next)) { failure = NativeStrings.text(context, "Android не разрешил прямой маршрут. Проверьте настройки NekoBox и запрет соединений без VPN."); return }
             selected = next
             failure = null
         } catch (_: SecurityException) {
-            failure = "VPN запрещает обход. Разрешите LAN или исключите Nearbridge в NekoBox."
+            failure = NativeStrings.text(context, "VPN запрещает обход. Разрешите LAN или исключите LinkInDrop в NekoBox.")
         }
     }
     fun setEnabled(value: Boolean): Map<String, Any?> { enabled = value; apply(); return status() }

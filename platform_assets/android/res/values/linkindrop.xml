@@ -1,0 +1,4 @@
+<resources>
+    <color name="launcher_background">#F8FAFF</color>
+    <string name="send_clipboard">Send clipboard</string>
+</resources>

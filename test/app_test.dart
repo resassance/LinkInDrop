@@ -6,13 +6,17 @@ import 'package:nearbridge/ui/app.dart';
 
 void main() {
   testWidgets('desktop and compact layouts show pairing and clipboard controls', (tester) async {
-    final controller = BridgeController()..loading = false;
+    final controller = BridgeController()..loading = false..languagePreference = 'ru';
     await tester.binding.setSurfaceSize(const Size(1100, 1100));
     await tester.pumpWidget(NearbridgeApp(controller: controller, start: false));
-    expect(find.text('nearbridge'), findsOneWidget);
-    expect(find.text('Добавить'), findsOneWidget);
-    expect(find.text('Общий буфер'), findsOneWidget);
+    expect(find.text('LinkInDrop'), findsOneWidget);
     expect(find.text('Выбрать файлы'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('nav-2')));
+    await tester.pumpAndSettle();
+    expect(find.text('Добавить'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('nav-3')));
+    await tester.pumpAndSettle();
+    expect(find.text('Общий буфер'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.binding.setSurfaceSize(const Size(390, 844));
     await tester.pump();
@@ -23,7 +27,7 @@ void main() {
   });
 
   testWidgets('failed connections show readable messages and complete details', (tester) async {
-    final controller = BridgeController()..loading = false;
+    final controller = BridgeController()..loading = false..languagePreference = 'ru';
     controller.record(Activity('Не получилось',
       'Нет соединения с 192.168.31.45:45831. Проверьте VPN и Windows Firewall.\n\nПодробности: SocketException: timeout', error: true));
     await tester.binding.setSurfaceSize(const Size(1100, 1600));

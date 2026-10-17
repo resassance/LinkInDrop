@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -36,6 +37,6 @@ try {
   final result = await Process.run('powershell.exe', ['-NoProfile', '-NonInteractive',
     '-EncodedCommand', encodePowerShell(launcher)]);
   if (result.exitCode != 0) {
-    throw StateError('Windows не разрешил изменить правила сети. Повторите и подтвердите запрос администратора.');
+    throw StateError(localizeMessage("Windows не разрешил изменить правила сети. Повторите и подтвердите запрос администратора."));
   }
 }
