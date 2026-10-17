@@ -415,7 +415,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         Text(tr(context, "Перетащите файлы или папку на устройство, чтобы подготовить передачу."), style: TextStyle(color: subdued)),
       ],
       Divider(height: 32),
-      SectionHeading(tr(context, 'Резервное копирование фото'), help: tr(context, 'Новые фото из выбранных папок отправляются на устройство ниже. Оригиналы сохраняются; одинаковые снимки повторно не передаются.')),
+      SectionHeading(tr(context, 'Резервное копирование фото'), help: tr(context, 'Фото сохраняются в папке получения с исходными именами и подпапками: DCIM/Camera/photo.jpg. Оригиналы остаются на устройстве; уже скопированные файлы по тому же пути повторно не отправляются.')),
       if (backup != null) ...[
         ChoiceField<String>(label: tr(context, 'Куда копировать фото'), value: c.peers.any((peer) => peer.id == backup.peerId) ? backup.peerId : null,
           options: {for (final peer in c.peers) peer.id: peer.name}, onChanged: (value) async { backup.peerId = value; await backup.save(); c.changed(); }), const SizedBox(height: 12),
