@@ -13,5 +13,5 @@ fingerprints = {value.lower() for value in re.findall(r"certificate SHA-256 dige
 expected = (root / "platform_assets/android/release-certificate.sha256").read_text().strip()
 print("APK signer certificate fingerprints: " + ", ".join(sorted(fingerprints)))
 if fingerprints != {expected}:
-    raise RuntimeError("APK is not signed by the permanent Nearbridge release certificate")
-print("Verified permanent Nearbridge Android signing certificate")
+    raise RuntimeError("APK is not signed by the permanent LinkInDrop release certificate")
+print("Verified permanent LinkInDrop Android signing certificate")

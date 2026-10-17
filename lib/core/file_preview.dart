@@ -11,7 +11,7 @@ class FilePreview {
   static Future<Map<String, dynamic>> create(String name, SharedRead source) async {
     final lower = name.toLowerCase();
     final image = RegExp(r'\.(png|jpg|jpeg|webp|gif)$').hasMatch(lower);
-    if (image && source.size > 8 * 1024 * 1024) return {'type': 'metadata', 'reason': 'Для предпросмотра изображение слишком большое'};
+    if (image && source.size > 8 * 1024 * 1024) return {'type': 'metadata', 'reason': "Для предпросмотра изображение слишком большое"};
     final limit = image ? 8 * 1024 * 1024 : 65536;
     final builder = BytesBuilder(copy: false);
     await for (final chunk in source.stream) {
@@ -32,7 +32,7 @@ class FilePreview {
     final decoder = img.findDecoderForData(bytes);
     final info = decoder?.startDecode(bytes);
     if (decoder == null || info == null || info.width * info.height > 16000000 || info.width < 1 || info.height < 1) {
-      return {'type': 'metadata', 'reason': 'Предпросмотр изображения недоступен'};
+      return {'type': 'metadata', 'reason': "Предпросмотр изображения недоступен"};
     }
     final decoded = decoder.decodeFrame(0);
     if (decoded == null) return {'type': 'metadata'};

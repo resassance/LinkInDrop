@@ -1,4 +1,4 @@
-package dev.resassance.nearbridge
+package dev.resassance.linkindrop
 
 import android.app.Application
 import io.flutter.embedding.engine.FlutterEngine

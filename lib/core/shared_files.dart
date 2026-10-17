@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -38,11 +39,11 @@ class SharedFiles {
   }
 
   Future<void> add(String path) async {
-    if (_paths.length >= 200) throw StateError('Можно открыть доступ к 200 файлам');
+    if (_paths.length >= 200) throw StateError(localizeMessage("Можно открыть доступ к 200 файлам"));
     if (path.startsWith('content://')) {
-      if (documents == null) throw StateError('Документы Android недоступны');
+      if (documents == null) throw StateError(localizeMessage("Документы Android недоступны"));
       final info = await documents!.statDocument(path);
-      if (info['size'] is! int || (info['size'] as int) < 0 || (info['size'] as int) > maxFileBytes) throw StateError('Недопустимый размер файла');
+      if (info['size'] is! int || (info['size'] as int) < 0 || (info['size'] as int) > maxFileBytes) throw StateError(localizeMessage("Недопустимый размер файла"));
       if (_paths.containsValue(path)) return;
       _paths[randomToken(16)] = path;
       await documents!.retain(path);
@@ -55,9 +56,9 @@ class SharedFiles {
     if (!p.equals(p.normalize(p.absolute(path)), canonical) ||
         p.equals(canonical, privateRoot) || p.isWithin(privateRoot, canonical) ||
         await FileSystemEntity.type(canonical, followLinks: false) != FileSystemEntityType.file) {
-      throw StateError('Этот файл нельзя открыть для удалённого доступа');
+      throw StateError(localizeMessage("Этот файл нельзя открыть для удалённого доступа"));
     }
-    if (await file.length() > maxFileBytes) throw StateError('Лимит файла — 8 ТБ');
+    if (await file.length() > maxFileBytes) throw StateError(localizeMessage("Лимит файла — 8 ТБ"));
     if (_paths.containsValue(canonical)) return;
     _paths[randomToken(16)] = canonical;
     await _save();

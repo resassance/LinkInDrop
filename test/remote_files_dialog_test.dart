@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/ui/remote_files_dialog.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/ui/remote_files_dialog.dart';
 
 void main() {
   testWidgets('compact remote folder actions fit long names', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 640));
     final id = randomToken(16);
     final folder = SharedFile(id: id, folderId: id, relativePath: '', name: 'Очень длинное имя общей папки на телефоне', size: 0, isDirectory: true);
-    await tester.pumpWidget(MaterialApp(home: Builder(builder: (context) => TextButton(
+    await tester.pumpWidget(MaterialApp(locale: const Locale('ru'), supportedLocales: const [Locale('ru')], localizationsDelegates: GlobalMaterialLocalizations.delegates, home: Builder(builder: (context) => TextButton(
       onPressed: () => showDialog<void>(context: context, builder: (_) => RemoteFilesDialog(
         deviceName: 'Телефон с длинным названием', canDownload: true, toggleFavorite: (_) async {},
         load: (_, __) async => SharedPage([folder]))), child: const Text('Open')))));
@@ -32,7 +33,7 @@ void main() {
     final file = SharedFile(id: id, folderId: id, relativePath: 'hello.txt', name: 'hello.txt', size: 5);
     final calls = <String>[];
     SharedFile? chosen;
-    await tester.pumpWidget(MaterialApp(home: Builder(builder: (context) => TextButton(
+    await tester.pumpWidget(MaterialApp(locale: const Locale('ru'), supportedLocales: const [Locale('ru')], localizationsDelegates: GlobalMaterialLocalizations.delegates, home: Builder(builder: (context) => TextButton(
       onPressed: () async {
         chosen = await showDialog<SharedFile>(context: context, builder: (_) => RemoteFilesDialog(
           deviceName: 'PC', canDownload: true, load: (directory, offset) async {

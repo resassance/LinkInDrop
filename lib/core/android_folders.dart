@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:typed_data';
 import 'dart:io';
 
@@ -9,11 +10,11 @@ import 'shared_folders.dart';
 class AndroidFolders implements FolderProvider {
   const AndroidFolders();
   static final Map<String, int> _references = {};
-  static const channel = MethodChannel('nearbridge/system');
+  static const channel = MethodChannel('linkindrop/system');
 
   Future<T> _translate<T>(Future<T> Function() operation) async {
     try { return await operation(); } on PlatformException catch (error) {
-      throw FileSystemException(error.message ?? 'Папка недоступна');
+      throw FileSystemException(error.message ?? localizeMessage("Папка недоступна"));
     }
   }
 
@@ -25,7 +26,7 @@ class AndroidFolders implements FolderProvider {
   @override
   Future<Map<String, dynamic>> statDocument(String location) async {
     final value = await _translate<Map<String, dynamic>?>(() => channel.invokeMapMethod<String, dynamic>('statSharedDocument', {'uri': location}));
-    if (value == null) throw const FileSystemException('Файл недоступен');
+    if (value == null) throw FileSystemException(localizeMessage("Файл недоступен"));
     return value;
   }
 
@@ -51,7 +52,7 @@ class AndroidFolders implements FolderProvider {
   Future<SharedPage> list(String location, String id, String path, int offset) async {
     final value = await _translate(() => channel.invokeMapMethod<String, dynamic>('listFolder',
       {'uri': location, 'path': path, 'offset': offset}));
-    if (value == null) throw StateError('Папка недоступна');
+    if (value == null) throw StateError(localizeMessage("Папка недоступна"));
     final items = (value['files'] as List).map((raw) {
       final entry = Map<String, dynamic>.from(raw as Map);
       return SharedFile.fromJson({...entry, 'id': id, 'folderId': id});
@@ -66,7 +67,7 @@ class AndroidFolders implements FolderProvider {
 
   Future<SharedRead> _open(String method, Map<String, dynamic> arguments) async {
     final value = await _translate(() => channel.invokeMapMethod<String, dynamic>(method, arguments));
-    if (value == null) throw StateError('Файл недоступен');
+    if (value == null) throw StateError(localizeMessage("Файл недоступен"));
     final reader = value['reader'] as String;
     var closed = false;
     Future<void> close() async {

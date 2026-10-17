@@ -126,6 +126,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     ? { cert: fs.readFileSync(process.env.TLS_CERT_FILE), key: fs.readFileSync(process.env.TLS_KEY_FILE) } : undefined;
   const relay = createRelay({ tls });
   const port = await relay.listen(Number(process.env.PORT ?? 8080), process.env.BIND_HOST ?? '127.0.0.1');
-  process.stdout.write(`Nearbridge relay listening on ${port}\n`);
+  process.stdout.write(`LinkInDrop relay listening on ${port}\n`);
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => { await relay.close(); process.exit(0); });
 }

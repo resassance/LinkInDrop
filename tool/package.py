@@ -15,14 +15,14 @@ if version_match is None:
     raise RuntimeError("pubspec.yaml has no version")
 version = version_match.group(1)
 if platform == "android":
-    shutil.copyfile(root / "build/app/outputs/flutter-apk/app-release.apk", output / f"nearbridge-{version}-android.apk")
+    shutil.copyfile(root / "build/app/outputs/flutter-apk/app-release.apk", output / f"linkindrop-{version}-android.apk")
 elif platform == "linux":
     bundle = root / "build/linux/x64/release/bundle"
-    with tarfile.open(output / f"nearbridge-{version}-linux-x64.tar.gz", "w:gz") as archive:
-        archive.add(bundle, arcname="nearbridge")
+    with tarfile.open(output / f"linkindrop-{version}-linux-x64.tar.gz", "w:gz") as archive:
+        archive.add(bundle, arcname="LinkInDrop")
 elif platform == "windows":
     bundle = root / "build/windows/x64/runner/Release"
-    with zipfile.ZipFile(output / f"nearbridge-{version}-windows-x64.zip", "w", zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(output / f"linkindrop-{version}-windows-x64.zip", "w", zipfile.ZIP_DEFLATED) as archive:
         for file in bundle.rglob("*"):
             if file.is_file():
                 archive.write(file, file.relative_to(bundle))

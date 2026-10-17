@@ -1,3 +1,4 @@
+import '../l10n/app_strings.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -51,7 +52,7 @@ class _RemoteFilesDialogState extends State<RemoteFilesDialog> {
 
   void _enter(SharedFile entry) {
     final path = entry.relativePath ?? '';
-    final root = entry.rootName ?? (path.isEmpty ? entry.name : _folders.isNotEmpty ? _folders.first.name : 'Общая папка');
+    final root = entry.rootName ?? (path.isEmpty ? entry.name : _folders.isNotEmpty ? _folders.first.name : tr(context, "Общая папка"));
     _folders.clear();
     _folders.add(SharedFile(id: entry.id, folderId: entry.folderId, relativePath: '', name: root, size: 0, isDirectory: true, rootName: root));
     var relative = '';
@@ -71,16 +72,16 @@ class _RemoteFilesDialogState extends State<RemoteFilesDialog> {
       title: Text(entry.name),
       content: SizedBox(width: 480, height: 360, child: FutureBuilder<Map<String, dynamic>>(
         future: pending, builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
+          if (snapshot.connectionState != ConnectionState.done) return Center(child: CircularProgressIndicator());
           if (snapshot.hasError) return SelectableText('${snapshot.error}');
           final data = snapshot.data!;
           if (data['type'] == 'image') return Image.memory(base64.decode(data['data'] as String), fit: BoxFit.contain, cacheWidth: 400);
           if (data['type'] == 'text') return SingleChildScrollView(child: SelectableText(
-            '${data['text']}${data['truncated'] == true ? '\n… показано начало файла' : ''}', style: const TextStyle(fontFamily: 'monospace')));
-          return Text(data['reason'] as String? ?? 'Предпросмотр этого формата недоступен. Размер: ${_size(entry.size)}');
+            '${data['text']}${data['truncated'] == true ? tr(context, "\n… показано начало файла") : ''}', style: TextStyle(fontFamily: 'monospace')));
+          return Text(data['reason'] is String ? tr(context, data['reason'] as String) : tr(context, "Предпросмотр этого формата недоступен. Размер: {0}", [_size(entry.size)]));
         })),
-      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Закрыть')),
-        FilledButton(onPressed: !widget.canDownload ? null : () => Navigator.pop(context, true), child: const Text('Скачать'))]));
+      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: Text(tr(context, "Закрыть"))),
+        FilledButton(onPressed: !widget.canDownload ? null : () => Navigator.pop(context, true), child: Text(tr(context, "Скачать")))]));
     if (download == true && mounted) Navigator.pop(context, entry);
   }
 
@@ -125,59 +126,57 @@ class _RemoteFilesDialogState extends State<RemoteFilesDialog> {
     unawaited(_load(reset: true));
   }
 
-  String _size(int bytes) => bytes < 1024 ? '$bytes Б'
-    : bytes < 1024 * 1024 ? '${(bytes / 1024).toStringAsFixed(1)} КБ'
-    : '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ';
+  String _size(int bytes) => stringsOf(context).size(bytes);
 
   Widget _entry(SharedFile entry) => InkWell(
     onTap: _loading ? null : entry.isDirectory ? () => _enter(entry) : () => _showPreview(entry),
-    child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), child: Row(children: [
+    child: Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6), child: Row(children: [
       SizedBox(width: 28, height: 32, child: !entry.isDirectory && widget.preview != null && RegExp(r'\.(png|jpe?g|webp|gif)$', caseSensitive: false).hasMatch(entry.name)
         ? _Thumbnail(load: () => _preview(entry)) : Icon(entry.isDirectory ? Icons.folder_outlined : Icons.insert_drive_file_outlined)),
-      const SizedBox(width: 10),
+      SizedBox(width: 10),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(entry.name, key: ValueKey('remote-name:${entry.relativePath ?? entry.id}'), maxLines: 2, overflow: TextOverflow.ellipsis),
-        Text(entry.isDirectory ? 'Папка' : _size(entry.size), style: Theme.of(context).textTheme.bodySmall),
+        Text(entry.isDirectory ? tr(context, "Папка") : _size(entry.size), style: Theme.of(context).textTheme.bodySmall),
       ])),
-      SizedBox(width: 40, child: PopupMenuButton<String>(tooltip: 'Действия: ${entry.name}',
+      SizedBox(width: 40, child: PopupMenuButton<String>(tooltip: tr(context, "Действия: {0}", [entry.name]),
         onSelected: (action) async {
           if (action == 'download') Navigator.pop(context, entry);
           if (action == 'favorite') { await widget.toggleFavorite!(entry); if (mounted) setState(() {}); }
         }, itemBuilder: (_) => [
           PopupMenuItem(value: 'download', enabled: !_loading && widget.canDownload,
-            child: Text(entry.isDirectory ? 'Скачать папку' : 'Скачать')),
+            child: Text(entry.isDirectory ? tr(context, "Скачать папку") : tr(context, "Скачать"))),
           if (entry.isDirectory && widget.toggleFavorite != null) PopupMenuItem(value: 'favorite',
-            child: Text(widget.isFavorite?.call(entry) == true ? 'Убрать из избранного' : 'В избранное')),
+            child: Text(widget.isFavorite?.call(entry) == true ? tr(context, "Убрать из избранного") : tr(context, "В избранное"))),
         ])),
     ])));
 
   Widget _browser() => Scaffold(
     appBar: AppBar(automaticallyImplyLeading: false, titleSpacing: 12,
-      title: Text(widget.deviceName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18)),
-      actions: [IconButton(tooltip: 'Обновить', onPressed: _loading ? null : () => _load(reset: true), icon: const Icon(Icons.refresh)),
-        IconButton(tooltip: 'Закрыть', onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close))]),
+      title: Text(widget.deviceName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 18)),
+      actions: [IconButton(tooltip: tr(context, "Обновить"), onPressed: _loading ? null : () => _load(reset: true), icon: Icon(Icons.refresh)),
+        IconButton(tooltip: tr(context, "Закрыть"), onPressed: () => Navigator.pop(context), icon: Icon(Icons.close))]),
     body: Column(children: [
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Row(children: [
-        if (_folders.isNotEmpty) IconButton(tooltip: 'Назад', onPressed: _back, icon: const Icon(Icons.arrow_back))
-        else const Padding(padding: EdgeInsets.all(12), child: Icon(Icons.folder_shared_outlined)),
-        Expanded(child: Text(_folders.isEmpty ? 'Общие файлы и папки' : _folders.last.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-        if (_folders.isNotEmpty) IconButton(tooltip: 'К общему списку', icon: const Icon(Icons.home_outlined), onPressed: () {
+      Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Row(children: [
+        if (_folders.isNotEmpty) IconButton(tooltip: tr(context, "Назад"), onPressed: _back, icon: Icon(Icons.arrow_back))
+        else Padding(padding: EdgeInsets.all(12), child: Icon(Icons.folder_shared_outlined)),
+        Expanded(child: Text(_folders.isEmpty ? tr(context, "Общие файлы и папки") : _folders.last.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+        if (_folders.isNotEmpty) IconButton(tooltip: tr(context, "К общему списку"), icon: Icon(Icons.home_outlined), onPressed: () {
           _folders.clear(); _query.clear(); unawaited(_load(reset: true));
         }),
       ])),
-      if (!widget.canDownload) const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Включите приём файлов, чтобы скачивать их.')),
-      if (widget.search != null) Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 8), child: TextField(
-        controller: _query, decoration: const InputDecoration(isDense: true, prefixIcon: Icon(Icons.search), hintText: 'Поиск файлов'),
-        onChanged: (_) { _debounce?.cancel(); _debounce = Timer(const Duration(milliseconds: 400), () => unawaited(_load(reset: true))); })),
-      const Divider(height: 1),
-      Expanded(child: _loading && _entries.isEmpty ? const Center(child: CircularProgressIndicator()) : ListView(children: [
-        if (_error != null) Padding(padding: const EdgeInsets.all(12), child: SelectableText('$_error\n\nПроверьте доступ к папке на другом устройстве.')),
-        if (_entries.isEmpty && _error == null) Padding(padding: const EdgeInsets.all(12), child: Text(_folders.isEmpty
-          ? 'Общих файлов и папок пока нет. Выберите их на другом устройстве.' : 'Папка пуста или в ней нет доступных файлов.')),
+      if (!widget.canDownload) Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text(tr(context, "Включите приём файлов, чтобы скачивать их."))),
+      if (widget.search != null) Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 8), child: TextField(
+        controller: _query, decoration: InputDecoration(isDense: true, prefixIcon: Icon(Icons.search), hintText: tr(context, "Поиск файлов")),
+        onChanged: (_) { _debounce?.cancel(); _debounce = Timer(Duration(milliseconds: 400), () => unawaited(_load(reset: true))); })),
+      Divider(height: 1),
+      Expanded(child: _loading && _entries.isEmpty ? Center(child: CircularProgressIndicator()) : ListView(children: [
+        if (_error != null) Padding(padding: EdgeInsets.all(12), child: SelectableText(tr(context, "{0}\n\nПроверьте доступ к папке на другом устройстве.", [_error]))),
+        if (_entries.isEmpty && _error == null) Padding(padding: EdgeInsets.all(12), child: Text(_folders.isEmpty
+          ? tr(context, "Общих файлов и папок пока нет. Выберите их на другом устройстве.") : tr(context, "Папка пуста или в ней нет доступных файлов."))),
         for (final entry in _entries) _entry(entry),
-        if (_loading) const Center(child: CircularProgressIndicator()),
+        if (_loading) Center(child: CircularProgressIndicator()),
         if ((_nextOffset != null || _cursor != null) && !_loading) TextButton(onPressed: () => _load(reset: false),
-          child: Text(_cursor != null ? 'Продолжить поиск' : 'Показать ещё')),
+          child: Text(_cursor != null ? tr(context, "Продолжить поиск") : tr(context, "Показать ещё"))),
       ])),
     ]));
 
@@ -189,7 +188,7 @@ class _RemoteFilesDialogState extends State<RemoteFilesDialog> {
 }
 
 class _Thumbnail extends StatefulWidget {
-  const _Thumbnail({required this.load});
+  _Thumbnail({required this.load});
   final Future<Map<String, dynamic>> Function() load;
   @override
   State<_Thumbnail> createState() => _ThumbnailState();
@@ -200,7 +199,7 @@ class _ThumbnailState extends State<_Thumbnail> {
   @override
   Widget build(BuildContext context) => SizedBox(width: 40, height: 40,
     child: FutureBuilder<Map<String, dynamic>>(future: pending, builder: (context, snapshot) {
-      if (snapshot.data?['type'] != 'image') return const Icon(Icons.image_outlined);
+      if (snapshot.data?['type'] != 'image') return Icon(Icons.image_outlined);
       return ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.memory(
         base64.decode(snapshot.data!['data'] as String), fit: BoxFit.cover, cacheWidth: 80));
     }));

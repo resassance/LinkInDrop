@@ -1,4 +1,4 @@
-package dev.resassance.nearbridge
+package dev.resassance.linkindrop
 
 import android.content.Context
 import android.net.Uri
@@ -18,12 +18,12 @@ class ReceiveFiles(private val context: Context) {
         resolver.openInputStream(uri)?.use { input ->
             val buffer = ByteArray(65536)
             while (true) { val count = input.read(buffer); if (count < 0) break; hash.update(buffer, 0, count) }
-        } ?: throw IllegalArgumentException("Нет доступа к копии")
+        } ?: throw IllegalArgumentException(NativeStrings.text(context, "Нет доступа к копии"))
         return hash.digest().joinToString("") { "%02x".format(it) }
     }
     private fun root(tree: String): Uri {
         val uri = Uri.parse(tree)
-        if (!DocumentsContract.isTreeUri(uri) || resolver.persistedUriPermissions.none { it.uri == uri && it.isWritePermission && it.isReadPermission }) throw SecurityException("Выберите папку получения заново")
+        if (!DocumentsContract.isTreeUri(uri) || resolver.persistedUriPermissions.none { it.uri == uri && it.isWritePermission && it.isReadPermission }) throw SecurityException(NativeStrings.text(context, "Выберите папку получения заново"))
         return DocumentsContract.buildDocumentUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri))
     }
     private fun parts(path: String): List<String> {
@@ -41,10 +41,10 @@ class ReceiveFiles(private val context: Context) {
     private fun folder(parent: Uri, name: String): Uri {
         val found = find(parent, name)
         if (found != null) {
-            if (!found.second) throw IllegalArgumentException("Вместо папки уже существует файл")
+            if (!found.second) throw IllegalArgumentException(NativeStrings.text(context, "Вместо папки уже существует файл"))
             return found.first
         }
-        return DocumentsContract.createDocument(resolver, parent, directoryMime, name) ?: throw IllegalArgumentException("Не удалось создать папку")
+        return DocumentsContract.createDocument(resolver, parent, directoryMime, name) ?: throw IllegalArgumentException(NativeStrings.text(context, "Не удалось создать папку"))
     }
     fun handle(call: MethodCall): Any? {
         if (call.method == "verifyReceived") {
@@ -59,7 +59,7 @@ class ReceiveFiles(private val context: Context) {
         for (part in path.dropLast(1)) parent = folder(parent, part)
         var name = path.last()
         var existing = find(parent, name)
-        if (existing?.second == true) throw IllegalArgumentException("Вместо файла уже существует папка")
+        if (existing?.second == true) throw IllegalArgumentException(NativeStrings.text(context, "Вместо файла уже существует папка"))
         val policy = call.argument<String>("policy") ?: "rename"
         if (existing != null && policy == "skip") return mapOf("location" to existing.first.toString(), "skipped" to true)
         if (existing != null && policy != "replace") {
@@ -73,13 +73,13 @@ class ReceiveFiles(private val context: Context) {
         val privateRoot = context.filesDir.canonicalFile
         if (!source.canonicalPath.startsWith(privateRoot.path + File.separator)) throw SecurityException("Invalid source")
         val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase(Locale.ROOT)) ?: "application/octet-stream"
-        val temporary = DocumentsContract.createDocument(resolver, parent, mime, ".nearbridge-${UUID.randomUUID()}") ?: throw IllegalArgumentException("Не удалось создать файл")
+        val temporary = DocumentsContract.createDocument(resolver, parent, mime, ".linkindrop-${UUID.randomUUID()}") ?: throw IllegalArgumentException(NativeStrings.text(context, "Не удалось создать файл"))
         var oldBackup: Uri? = null
         try {
-            resolver.openOutputStream(temporary, "wt")?.use { output -> source.inputStream().use { it.copyTo(output, 65536) } } ?: throw IllegalArgumentException("Нет разрешения на запись")
-            if (digest(temporary) != call.argument<String>("digest")) throw IllegalStateException("Контрольная сумма копии не совпала")
-            if (existing != null) oldBackup = DocumentsContract.renameDocument(resolver, existing.first, ".nearbridge-old-${UUID.randomUUID()}") ?: throw IllegalArgumentException("Не удалось сохранить предыдущий файл")
-            val target = DocumentsContract.renameDocument(resolver, temporary, name) ?: throw IllegalArgumentException("Не удалось завершить получение")
+            resolver.openOutputStream(temporary, "wt")?.use { output -> source.inputStream().use { it.copyTo(output, 65536) } } ?: throw IllegalArgumentException(NativeStrings.text(context, "Нет разрешения на запись"))
+            if (digest(temporary) != call.argument<String>("digest")) throw IllegalStateException(NativeStrings.text(context, "Контрольная сумма копии не совпала"))
+            if (existing != null) oldBackup = DocumentsContract.renameDocument(resolver, existing.first, ".linkindrop-old-${UUID.randomUUID()}") ?: throw IllegalArgumentException(NativeStrings.text(context, "Не удалось сохранить предыдущий файл"))
+            val target = DocumentsContract.renameDocument(resolver, temporary, name) ?: throw IllegalArgumentException(NativeStrings.text(context, "Не удалось завершить получение"))
             oldBackup?.let { try { DocumentsContract.deleteDocument(resolver, it) } catch (_: Exception) {} }
             return mapOf("location" to target.toString(), "skipped" to false)
         } catch (error: Exception) {

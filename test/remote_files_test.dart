@@ -1,13 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/connection_error.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/core/node.dart';
+import 'package:linkindrop/core/connection_error.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/core/node.dart';
 
 void main() {
   test('paired browsing, pull download, route failover and revocation', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-remote-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-remote-');
     final received = <Activity>[];
     BridgeNode make(String name) => BridgeNode(
       directory: Directory('${root.path}/$name'), name: name, preferredPort: 0,
@@ -53,7 +53,7 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('pairing can use an alternative adapter from a new QR code', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-adapter-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-adapter-');
     BridgeNode make(String name) => BridgeNode(
       directory: Directory('${root.path}/$name'), name: name, preferredPort: 0,
       discoveryEnabled: false, onPairRequest: (_) async => true,

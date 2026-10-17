@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -87,7 +88,7 @@ class TransferQueue extends ChangeNotifier {
   }
 
   Future<void> addAll(Iterable<TransferJob> values) async {
-    if (jobs.length + values.length > 20000) throw StateError('В очереди слишком много файлов');
+    if (jobs.length + values.length > 20000) throw StateError(localizeMessage("В очереди слишком много файлов"));
     for (final job in values) {
       if (job.kind == 'backup' && !_backupEnabled && job.state == 'waiting') { job.backupPaused = true; job.state = 'paused'; }
       jobs.add(job);

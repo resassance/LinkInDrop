@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -11,7 +12,7 @@ bool validRelayUrl(String value) {
 
 Uri relayEndpoint(String url, String role, String room, {String? id}) {
   if (!validRelayUrl(url) || !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(room)) {
-    throw const FormatException('Нужен адрес wss:// сервера ретрансляции');
+    throw FormatException(localizeMessage("Нужен адрес wss:// сервера ретрансляции"));
   }
   return Uri.parse(url).replace(path: '/$role', queryParameters: {'room': room, if (id != null) 'id': id});
 }

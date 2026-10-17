@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -122,13 +123,13 @@ class BridgeNode {
         listenPort, identity.context);
     } on SocketException {
       _server = await HttpServer.bindSecure(InternetAddress.anyIPv4, 0, identity.context);
-      onActivity(Activity('Порт подключения изменён',
-        'Порт $listenPort занят. Используется $port. Создайте новый QR и обновите правило Windows Firewall.', error: true));
+      onActivity(Activity(localizeMessage("Порт подключения изменён"),
+        localizeMessage("Порт {0} занят. Используется {1}. Создайте новый QR и обновите правило Windows Firewall.", [listenPort, port]), error: true));
     }
     if (preferredPort != 0) await File(p.join(directory.path, 'listen-port')).writeAsString('$port', flush: true);
     _server!.idleTimeout = const Duration(seconds: 30);
     _server!.listen((request) => unawaited(_handle(request)), onError: (Object error) {
-      onActivity(Activity('Ошибка соединения', '$error', error: true));
+      onActivity(Activity(localizeMessage("Ошибка соединения"), '$error', error: true));
     });
   }
 
@@ -169,7 +170,7 @@ class BridgeNode {
   }
 
   Future<void> configureRelay(String? address) async {
-    if (address != null && !validRelayUrl(address)) throw const FormatException('Нужен адрес wss:// сервера');
+    if (address != null && !validRelayUrl(address)) throw FormatException(localizeMessage("Нужен адрес wss:// сервера"));
     await relayHost?.close();
     relayHost = null;
     relayUrl = address;
@@ -250,7 +251,7 @@ class BridgeNode {
         final request = await client.openUrl(body == null ? 'GET' : 'POST',
           Uri(scheme: 'https', host: host, port: port, path: endpoint, queryParameters: query));
         request.followRedirects = false;
-        request.headers.set('X-Nearbridge-Id', identity.id);
+        request.headers.set('X-LinkInDrop-Id', identity.id);
         if (token != null) request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
         if (body != null) {
           request.headers.contentType = ContentType.json;
@@ -319,11 +320,11 @@ class BridgeNode {
   }
 
   Future<void> pair(PairInvite invite, {void Function(String)? onStage}) async {
-    if (invite.id == identity.id) throw StateError('Это ваше устройство');
+    if (invite.id == identity.id) throw StateError(localizeMessage("Это ваше устройство"));
     final target = '${invite.host}:${invite.port}';
-    onStage?.call('Проверка соединения с $target');
+    onStage?.call(localizeMessage("Проверка соединения с {0}", [target]));
     final host = await _probeInviteRoute(invite);
-    onStage?.call('Подтвердите подключение на ${invite.name}');
+    onStage?.call(localizeMessage("Подтвердите подключение на {0}", [invite.name]));
     try {
       await _completePair(PairInvite(id: invite.id, name: invite.name, host: host,
         port: invite.port, fingerprint: invite.fingerprint, secret: invite.secret,
@@ -361,7 +362,7 @@ class BridgeNode {
       additionalHosts: connectionHosts(response['hosts']), relayUrl: invite.relayUrl, relayRoom: invite.relayRoom)
       ..activeRelay = (invite.host == '@relay')..online = true;
     await savePeers();
-    onActivity(Activity('Устройство подключено', invite.name));
+    onActivity(Activity(localizeMessage("Устройство подключено"), invite.name));
     onChanged();
   }
 
@@ -398,7 +399,7 @@ class BridgeNode {
       for (final host in peer.additionalHosts) (host, peer.port),
     }.take(10).toList();
     for (var round = 0; round < 2; round++) {
-      if (!running || peers[peer.id] != peer) throw StateError('Устройство отключено');
+      if (!running || peers[peer.id] != peer) throw StateError(localizeMessage("Устройство отключено"));
       try {
         final route = await _firstSuccess(candidates.map((route) => () async {
           final watch = Stopwatch()..start();
@@ -409,7 +410,7 @@ class BridgeNode {
           if (result['id'] != peer.id) throw const FormatException('Device identity mismatch');
           return (route, connectionHosts(result['hosts']), watch.elapsedMilliseconds);
         }));
-        if (peers[peer.id] != peer || !running) throw StateError('Устройство отключено');
+        if (peers[peer.id] != peer || !running) throw StateError(localizeMessage("Устройство отключено"));
         peer.latencyMs = route.$3;
         peer.connectionFailure = null;
         peer.activeRelay = route.$1.$1 == '@relay';
@@ -449,7 +450,7 @@ class BridgeNode {
 
   Future<void> sendClipboard(ClipboardPayload payload) async {
     final targets = peers.values.where((p) => p.clipboardEnabled).toList();
-    if (targets.isEmpty) throw StateError('Нет подключённых устройств');
+    if (targets.isEmpty) throw StateError(localizeMessage("Нет подключённых устройств"));
     var delivered = 0;
     await Future.wait(targets.map((peer) async {
       try {
@@ -460,16 +461,16 @@ class BridgeNode {
       }
     }));
     onChanged();
-    if (delivered == 0) throw StateError('Не удалось передать буфер');
-    onActivity(Activity('Буфер отправлен',
-      '${payload.type == 'png' ? 'Изображение' : 'Текст'} · устройств: $delivered'));
+    if (delivered == 0) throw StateError(localizeMessage("Не удалось передать буфер"));
+    onActivity(Activity(localizeMessage("Буфер отправлен"),
+      localizeMessage("{0} · устройств: {1}", [payload.type == 'png' ? localizeMessage("Изображение") : localizeMessage("Текст"), delivered])));
   }
 
   Future<void> sendFile(Peer peer, String path, {String? filename}) async {
-    if (transferName != null) throw StateError('Дождитесь текущей передачи');
+    if (transferName != null) throw StateError(localizeMessage("Дождитесь текущей передачи"));
     final file = File(path);
     final length = await file.length();
-    if (length > maxFileBytes) throw StateError('Лимит файла — 8 ТБ');
+    if (length > maxFileBytes) throw StateError(localizeMessage("Лимит файла — 8 ТБ"));
     final name = safeFilename(filename ?? p.basename(path));
     final client = _client(peer.fingerprint);
     _outgoingTransfer = client;
@@ -481,9 +482,9 @@ class BridgeNode {
       final request = await client.postUrl(Uri(scheme: 'https', host: peer.connectionHost,
         port: peer.connectionPort, path: '/file')).timeout(const Duration(seconds: 15));
       request.followRedirects = false;
-      request.headers.set('X-Nearbridge-Id', identity.id);
+      request.headers.set('X-LinkInDrop-Id', identity.id);
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
-      request.headers.set('X-Nearbridge-Filename', base64Url.encode(utf8.encode(name)));
+      request.headers.set('X-LinkInDrop-Filename', base64Url.encode(utf8.encode(name)));
       request.contentLength = length;
       request.headers.contentType = ContentType.binary;
       var sent = 0;
@@ -495,8 +496,8 @@ class BridgeNode {
       })).timeout(const Duration(minutes: 30));
       final response = await request.close().timeout(const Duration(minutes: 2));
       await _readBounded(response, 65536);
-      if (response.statusCode != 200) throw HttpException('Передача отклонена (${response.statusCode})');
-      onActivity(Activity('Файл отправлен', '$name → ${peer.name}'));
+      if (response.statusCode != 200) throw HttpException(localizeMessage("Передача отклонена ({0})", [response.statusCode]));
+      onActivity(Activity(localizeMessage("Файл отправлен"), '$name → ${peer.name}'));
     } finally {
       client.close(force: true);
       _clients.remove(client);
@@ -516,13 +517,13 @@ class BridgeNode {
   Future<void> setRemoteAddress(Peer peer, String? host, int? port) async {
     if (host != null) {
       if (!isConnectionHost(host) || port == null || port < 1 || port > 65535) {
-        throw const FormatException('Введите IPv4/DNS-адрес и порт 1–65535');
+        throw FormatException(localizeMessage("Введите IPv4/DNS-адрес и порт 1–65535"));
       }
       final result = await _jsonRequest(host: host, port: port,
         fingerprint: peer.fingerprint, endpoint: '/ping', token: peer.outgoingToken, direct: true);
-      if (result['id'] != peer.id) throw StateError('Адрес принадлежит другому устройству');
+      if (result['id'] != peer.id) throw StateError(localizeMessage("Адрес принадлежит другому устройству"));
     }
-    if (peers[peer.id] != peer) throw StateError('Устройство уже отключено');
+    if (peers[peer.id] != peer) throw StateError(localizeMessage("Устройство уже отключено"));
     peer.remoteHost = host;
     peer.remotePort = host == null ? null : port;
     peer.activeRelay = false;
@@ -591,10 +592,10 @@ class BridgeNode {
       } on HttpException {
         if (attempt != 0 || _transferCancelled) rethrow;
       }
-      onActivity(Activity('Восстановление соединения',
-        'Получение ${entry.name} будет повторено через доступный адрес устройства.'));
+      onActivity(Activity(localizeMessage("Восстановление соединения"),
+        localizeMessage("Получение {0} будет повторено через доступный адрес устройства.", [entry.name])));
       await Future<void>.delayed(const Duration(milliseconds: 350));
-      if (_transferCancelled) throw StateError('Передача отменена');
+      if (_transferCancelled) throw StateError(localizeMessage("Передача отменена"));
     }
   }
 
@@ -611,7 +612,7 @@ class BridgeNode {
     }
   }
 
-  String diagnosticReport() => jsonEncode({'app': 'Nearbridge', 'version': appVersion,
+  String diagnosticReport() => jsonEncode({'app': 'LinkInDrop', 'version': appVersion,
     'platform': Platform.operatingSystem, 'listening': running,
     'relayConfigured': relayUrl != null, 'relayOnline': relayHost?.online == true,
     'peers': peers.values.map((peer) => {'online': peer.online,
@@ -622,11 +623,11 @@ class BridgeNode {
     (await _pairedRequest(peer, '/receipts/$token/verify', body: {'sha256': digest}))['valid'] == true;
 
   Future<void> _downloadFile(Peer peer, SharedFile entry, String id, String? relative, String? expectedDigest) async {
-    if (!receivingEnabled) throw StateError('Включите приём файлов');
-    if (transferName != null) throw StateError('Дождитесь текущей передачи');
+    if (!receivingEnabled) throw StateError(localizeMessage("Включите приём файлов"));
+    if (transferName != null) throw StateError(localizeMessage("Дождитесь текущей передачи"));
     if (!RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(id)) throw const FormatException('Invalid transfer ID');
     SharedFile.fromJson(entry.toJson());
-    if (entry.isDirectory) throw StateError('Выберите файл внутри папки');
+    if (entry.isDirectory) throw StateError(localizeMessage("Выберите файл внутри папки"));
     _beginRate(entry.size);
     final state = await Directory(p.join(directory.path, 'partial')).create(recursive: true);
     final part = File(p.join(state.path, '$id.part'));
@@ -650,7 +651,7 @@ class BridgeNode {
       final digest = meta['digest'] as String;
       if (expectedDigest != null && digest != expectedDigest) throw const FormatException('Backup checksum mismatch');
       final receipt = await received.deliver(peer.id, id, output, relative ?? entry.name, digest);
-      onActivity(Activity(receipt['skipped'] == true ? 'Файл пропущен' : 'Файл получен', '${entry.name} · ${peer.name}', path: receipt['location'] as String));
+      onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '${entry.name} · ${peer.name}', path: receipt['location'] as String));
     }
     if (meta['done'] == true && await output.exists()) { await deliverCompleted(); return; }
     if (meta['finalizing'] == true && await output.exists()) {
@@ -686,7 +687,7 @@ class BridgeNode {
           queryParameters: entry.folderId == null ? null : {'folder': entry.folderId!, 'path': entry.relativePath!}))
           .timeout(const Duration(seconds: 15));
         request.followRedirects = false;
-        request.headers.set('X-Nearbridge-Id', identity.id);
+        request.headers.set('X-LinkInDrop-Id', identity.id);
         request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
         request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-${offset + transferBlockBytes - 1}');
         if (meta['etag'] != null) request.headers.set(HttpHeaders.ifMatchHeader, meta['etag']);
@@ -701,7 +702,7 @@ class BridgeNode {
           continue;
         }
         if (response.statusCode != 200 && response.statusCode != 206) {
-          throw RemoteFailure(response.statusCode, 'Не удалось получить файл. Обновите список.');
+          throw RemoteFailure(response.statusCode, localizeMessage("Не удалось получить файл. Обновите список."));
         }
         final etag = response.headers.value(HttpHeaders.etagHeader);
         if (response.statusCode == 200) {
@@ -739,7 +740,7 @@ class BridgeNode {
         }
         final bytes = await _readTransferBlock(response, offset, total);
         if (bytes.length != end - offset + 1 || !secureEquals(
-            sha256.convert(bytes).toString(), response.headers.value('X-Nearbridge-SHA256') ?? '')) {
+            sha256.convert(bytes).toString(), response.headers.value('X-LinkInDrop-SHA256') ?? '')) {
           throw const FormatException('Block checksum mismatch');
         }
         if (_transferCancelled) throw const TransferStopped();
@@ -765,7 +766,7 @@ class BridgeNode {
       meta.remove('finalizing');
       await save();
       final receipt = await received.deliver(peer.id, id, destination, relative ?? entry.name, meta['digest'] as String);
-      onActivity(Activity(receipt['skipped'] == true ? 'Файл пропущен' : 'Файл получен', '${entry.name} · ${peer.name}', path: receipt['location'] as String));
+      onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '${entry.name} · ${peer.name}', path: receipt['location'] as String));
     } finally {
       client?.close(force: true);
       if (client != null) _clients.remove(client);
@@ -796,7 +797,7 @@ class BridgeNode {
   Future<String> uploadSource(Peer peer, String id, String filename,
       Future<SharedRead> Function(int offset, int? length) open,
       {String? relative, String? expectedDigest, void Function(String)? onDigest}) async {
-    if (transferName != null) throw StateError('Дождитесь текущей передачи');
+    if (transferName != null) throw StateError(localizeMessage("Дождитесь текущей передачи"));
     _transferCancelled = false;
     transferName = filename;
     transferProgress = 0;
@@ -809,13 +810,13 @@ class BridgeNode {
       _beginRate(total);
       lastUploadReceipt = null;
       try {
-        if (total < 0 || total > maxFileBytes) throw StateError('Лимит файла — 8 ТБ');
+        if (total < 0 || total > maxFileBytes) throw StateError(localizeMessage("Лимит файла — 8 ТБ"));
         digest = (await sha256.bind(original.stream.map((chunk) {
           if (_transferCancelled) throw const TransferStopped();
           return chunk;
         })).first).toString();
       } finally { await original.close(); }
-      if (expectedDigest != null && expectedDigest != digest) throw StateError('Исходный файл изменился. Добавьте его заново.');
+      if (expectedDigest != null && expectedDigest != digest) throw StateError(localizeMessage("Исходный файл изменился. Добавьте его заново."));
       onDigest?.call(digest);
       _rateClock.reset();
       var status = await _pairedRequest(peer, '/uploads', body: {'id': id, 'name': filename,
@@ -828,7 +829,7 @@ class BridgeNode {
         late Uint8List bytes;
         try {
           if (source.size != total || (version != null && source.version != version)) {
-            throw StateError('Исходный файл изменился');
+            throw StateError(localizeMessage("Исходный файл изменился"));
           }
           bytes = await _readBounded(source.stream, transferBlockBytes);
         } finally { await source.close(); }
@@ -840,9 +841,9 @@ class BridgeNode {
           final request = await client.postUrl(Uri(scheme: 'https', host: peer.connectionHost,
             port: peer.connectionPort, path: '/uploads/$id/block', queryParameters: {'offset': '$offset'}));
           request.followRedirects = false;
-          request.headers.set('X-Nearbridge-Id', identity.id);
+          request.headers.set('X-LinkInDrop-Id', identity.id);
           request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${peer.outgoingToken}');
-          request.headers.set('X-Nearbridge-SHA256', sha256.convert(bytes).toString());
+          request.headers.set('X-LinkInDrop-SHA256', sha256.convert(bytes).toString());
           request.contentLength = bytes.length;
           await request.addStream(() async* {
             for (var start = 0; start < bytes.length; start += 65536) {
@@ -868,7 +869,7 @@ class BridgeNode {
       status = await _pairedRequest(peer, '/uploads/$id/complete', body: {});
       lastUploadReceipt = status;
       if (status['sha256'] != digest) throw const FormatException('Upload checksum mismatch');
-      onActivity(Activity(status['skipped'] == true ? 'Файл пропущен получателем' : 'Файл отправлен', '$filename → ${peer.name}'));
+      onActivity(Activity(status['skipped'] == true ? localizeMessage("Файл пропущен получателем") : localizeMessage("Файл отправлен"), '$filename → ${peer.name}'));
       return digest;
     } finally { transferName = null; transferProgress = null; onChanged(); }
   }
@@ -904,7 +905,7 @@ class BridgeNode {
         await _acceptPair(request);
         return;
       }
-      final peer = peers[request.headers.value('X-Nearbridge-Id')];
+      final peer = peers[request.headers.value('X-LinkInDrop-Id')];
       if (peer == null || !secureEquals(
           request.headers.value(HttpHeaders.authorizationHeader) ?? '',
           'Bearer ${peer.incomingToken}')) {
@@ -958,8 +959,8 @@ class BridgeNode {
           await onClipboard(payload);
           _receivedIds.add(payload.id);
           if (_receivedIds.length > 256) _receivedIds.remove(_receivedIds.first);
-          onActivity(Activity('Буфер получен',
-            '${payload.type == 'png' ? 'Изображение' : 'Текст'} · ${peer.name}'));
+          onActivity(Activity(localizeMessage("Буфер получен"),
+            '${payload.type == 'png' ? localizeMessage("Изображение") : localizeMessage("Текст")} · ${peer.name}'));
           _respond(request, 200, {'ok': true});
         case ('POST', '/file'):
           if (!receivingEnabled || !peer.incomingFilesEnabled) {
@@ -971,16 +972,16 @@ class BridgeNode {
           _respond(request, 404, {'error': 'Not found'});
       }
     } on InsufficientSpace {
-      _respond(request, 507, {'error': 'Недостаточно свободного места у получателя'});
+      _respond(request, 507, {'error': localizeMessage("Недостаточно свободного места у получателя")});
     } on FileSystemException {
-      _respond(request, 404, {'error': 'Папка или файл недоступны. Обновите список.'});
+      _respond(request, 404, {'error': localizeMessage("Папка или файл недоступны. Обновите список.")});
     } on FormatException {
       _respond(request, 400, {'error': 'Invalid payload'});
     } on TimeoutException {
       _respond(request, 408, {'error': 'Timeout'});
     } catch (error) {
       _respond(request, 500, {'error': 'Request failed'});
-      onActivity(Activity('Ошибка передачи', '$error', error: true));
+      onActivity(Activity(localizeMessage("Ошибка передачи"), '$error', error: true));
     } finally {
       try {
         await request.response.close();
@@ -1033,14 +1034,14 @@ class BridgeNode {
       cancelInvite();
       _pairAttempts.remove(remote);
       _respond(request, 200, {'id': identity.id, 'token': token, 'hosts': _localAddresses, 'relayUrl': relayUrl, 'relayRoom': relayRoom});
-      onActivity(Activity('Устройство подключено', peer.name));
+      onActivity(Activity(localizeMessage("Устройство подключено"), peer.name));
     } finally {
       _pairing = false;
     }
   }
 
   Future<void> _serveSharedFiles(HttpRequest request, Peer peer) async {
-    if (!fileSharingEnabled) { _respond(request, 403, {'error': 'Владелец не включил доступ к файлам'}); return; }
+    if (!fileSharingEnabled) { _respond(request, 403, {'error': localizeMessage("Владелец не включил доступ к файлам")}); return; }
     if (request.uri.path == '/files') {
       _respond(request, 200, {'files': (await sharedFiles.list()).where((e) => access.allows(e.id, peer.id)).map((e) => e.toJson()).toList()});
       return;
@@ -1049,7 +1050,7 @@ class BridgeNode {
     if (parts.length != 2 || !RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(parts[1])) {
       _respond(request, 404, {'error': 'File not shared'}); return;
     }
-    if (!access.allows(parts[1], peer.id)) { _respond(request, 403, {'error': 'Доступ к файлу закрыт'}); return; }
+    if (!access.allows(parts[1], peer.id)) { _respond(request, 403, {'error': localizeMessage("Доступ к файлу закрыт")}); return; }
     final entry = await sharedFiles.metadata(parts[1]);
     if (entry == null) { _respond(request, 404, {'error': 'File not shared'}); return; }
     await _serveSource(request, peer, entry.name,
@@ -1086,13 +1087,13 @@ class BridgeNode {
         if (bytes.isEmpty) throw const FormatException('Incomplete source');
         request.response.statusCode = 206;
         request.response.headers.set(HttpHeaders.contentRangeHeader, 'bytes $offset-${offset + bytes.length - 1}/${source.size}');
-        request.response.headers.set('X-Nearbridge-SHA256', sha256.convert(bytes).toString());
+        request.response.headers.set('X-LinkInDrop-SHA256', sha256.convert(bytes).toString());
         request.response.contentLength = bytes.length;
         request.response.add(bytes);
       } else {
         request.response.contentLength = source.size;
         try { await request.response.addStream(source.stream).timeout(const Duration(minutes: 30)); }
-        catch (error) { onActivity(Activity('Скачивание прервано', '$error', error: true)); }
+        catch (error) { onActivity(Activity(localizeMessage("Скачивание прервано"), '$error', error: true)); }
       }
     } finally {
       try { await source?.close(); } catch (_) {} finally { _downloads--; }
@@ -1101,7 +1102,7 @@ class BridgeNode {
 
   Future<void> _acceptUpload(HttpRequest request, Peer peer) async {
     if (!receivingEnabled || !peer.incomingFilesEnabled) {
-      _respond(request, 403, {'error': 'Приём файлов от этого устройства отключён'}); return;
+      _respond(request, 403, {'error': localizeMessage("Приём файлов от этого устройства отключён")}); return;
     }
     final parts = request.uri.pathSegments;
     Map<String, dynamic> result;
@@ -1118,7 +1119,7 @@ class BridgeNode {
       final offset = int.tryParse(request.uri.queryParameters['offset'] ?? '');
       if (offset == null) throw const FormatException('Missing offset');
       result = await uploads.block(peer.id, parts[1], offset, await _readBounded(request, transferBlockBytes),
-        request.headers.value('X-Nearbridge-SHA256') ?? '');
+        request.headers.value('X-LinkInDrop-SHA256') ?? '');
     } else if (parts.length == 3 && parts[2] == 'complete') {
       await _readBounded(request, 8192);
       result = await uploads.complete(peer.id, parts[1]);
@@ -1129,7 +1130,7 @@ class BridgeNode {
         final completed = path == null ? await uploads.completedFile(peer.id, parts[1]) : File(path);
         final metadata = await uploads.metadata(peer.id, parts[1]);
         receipt = await received.deliver(peer.id, parts[1], completed, metadata['relative'] as String? ?? metadata['name'] as String, result['sha256'] as String);
-        onActivity(Activity(receipt['skipped'] == true ? 'Файл пропущен' : 'Файл получен', '${receipt['name']} · ${peer.name}', path: receipt['location'] as String));
+        onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '${receipt['name']} · ${peer.name}', path: receipt['location'] as String));
       }
       result['receipt'] = token;
       result['skipped'] = receipt['skipped'];
@@ -1144,7 +1145,7 @@ class BridgeNode {
   Future<void> _serveFolders(HttpRequest request, Peer peer) async {
     request.response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
     if (!fileSharingEnabled) {
-      _respond(request, 403, {'error': 'Владелец не включил доступ к файлам и папкам'});
+      _respond(request, 403, {'error': localizeMessage("Владелец не включил доступ к файлам и папкам")});
       return;
     }
     final query = request.uri.queryParameters;
@@ -1163,27 +1164,27 @@ class BridgeNode {
         _respond(request, 200, SharedPage(page,
           nextOffset: entries.length > offset + 200 ? offset + 200 : null).toJson());
       } else {
-        if (!access.allows(id, peer.id)) { _respond(request, 403, {'error': 'Доступ к папке закрыт'}); return; }
+        if (!access.allows(id, peer.id)) { _respond(request, 403, {'error': localizeMessage("Доступ к папке закрыт")}); return; }
         _respond(request, 200, (await sharedFolders.list(id, path, offset: offset)).toJson());
       }
       return;
     }
     if (id == null || path.isEmpty) throw const FormatException('Missing file path');
-    if (!access.allows(id, peer.id)) { _respond(request, 403, {'error': 'Доступ к папке закрыт'}); return; }
+    if (!access.allows(id, peer.id)) { _respond(request, 403, {'error': localizeMessage("Доступ к папке закрыт")}); return; }
     await _serveSource(request, peer, safeFilename(path),
       (offset, length) => sharedFolders.open(id, path, offset: offset, length: length));
   }
 
   Future<void> _serveTools(HttpRequest request, Peer peer) async {
-    if (!fileSharingEnabled) { _respond(request, 403, {'error': 'Доступ к файлам отключён'}); return; }
+    if (!fileSharingEnabled) { _respond(request, 403, {'error': localizeMessage("Доступ к файлам отключён")}); return; }
     final query = request.uri.queryParameters;
     final folder = query['folder'];
     final path = query['path'] ?? '';
     if (!isSharedPath(path)) throw const FormatException('Invalid path');
     if (request.uri.path == '/search') {
-      if (folder != null && !access.allows(folder, peer.id)) { _respond(request, 403, {'error': 'Доступ закрыт'}); return; }
+      if (folder != null && !access.allows(folder, peer.id)) { _respond(request, 403, {'error': localizeMessage("Доступ закрыт")}); return; }
       final page = await searchService.search(peer: peer.id, query: query['q'] ?? '', cursor: query['cursor'],
-        folder: folder == null ? null : SharedFile(id: folder, folderId: folder, relativePath: path, name: 'Папка', size: 0, isDirectory: true),
+        folder: folder == null ? null : SharedFile(id: folder, folderId: folder, relativePath: path, name: localizeMessage("Папка"), size: 0, isDirectory: true),
         roots: () async => [...sharedFolders.roots(), ...await sharedFiles.list()].where((e) => access.allows(e.id, peer.id)).toList(),
         list: (directory, offset) async {
           if (!access.allows(directory.id, peer.id)) throw SearchAccessDenied();
@@ -1194,7 +1195,7 @@ class BridgeNode {
       return;
     }
     final id = folder ?? query['id'] ?? '';
-    if (!access.allows(id, peer.id)) { _respond(request, 403, {'error': 'Доступ закрыт'}); return; }
+    if (!access.allows(id, peer.id)) { _respond(request, 403, {'error': localizeMessage("Доступ закрыт")}); return; }
     SharedRead? source;
     try {
       String name;
@@ -1217,7 +1218,7 @@ class BridgeNode {
       _respond(request, 413, {'error': 'File too large or receiver busy'});
       return;
     }
-    final encoded = request.headers.value('X-Nearbridge-Filename');
+    final encoded = request.headers.value('X-LinkInDrop-Filename');
     if (encoded == null || encoded.length > 2048) throw const FormatException('Missing filename');
     final name = safeFilename(utf8.decode(base64Url.decode(encoded)));
     final id = randomToken(8);
@@ -1239,7 +1240,7 @@ class BridgeNode {
       await temporary.rename(output.path);
       final digest = (await sha256.bind(output.openRead()).first).toString();
       final receipt = await this.received.deliver(peer.id, id, output, name, digest);
-      onActivity(Activity(receipt['skipped'] == true ? 'Файл пропущен' : 'Файл получен', '$name · ${peer.name}', path: receipt['location'] as String));
+      onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '$name · ${peer.name}', path: receipt['location'] as String));
       _respond(request, 200, {'ok': true, 'bytes': received});
     } catch (_) {
       try { await sink.close(); } catch (_) {}
@@ -1263,7 +1264,7 @@ class BridgeNode {
           if (current.data.length > 2048) continue;
           try {
             final data = jsonDecode(utf8.decode(current.data)) as Map<String, dynamic>;
-            if (data['app'] != 'nearbridge' || data['v'] != protocolVersion ||
+            if (data['app'] != 'linkindrop' || data['v'] != protocolVersion ||
                 data['id'] == identity.id || data['id'] is! String || data['name'] is! String ||
                 data['port'] is! int || !isLocalAddress(current.address.address)) continue;
             data['host'] = current.address.address;
@@ -1280,7 +1281,7 @@ class BridgeNode {
       _discoveryTimer = Timer.periodic(const Duration(seconds: 4), (_) => _announce());
       _announce();
     } catch (_) {
-      onActivity(Activity('Поиск устройств недоступен', 'Подключение через QR-код работает'));
+      onActivity(Activity(localizeMessage("Поиск устройств недоступен"), localizeMessage("Подключение через QR-код работает")));
     }
   }
 
@@ -1300,7 +1301,7 @@ class BridgeNode {
 
   void _announce() {
     nearby.removeWhere((_, data) => DateTime.now().millisecondsSinceEpoch - (data['seen'] as int) > 15000);
-    final data = utf8.encode(jsonEncode({'app': 'nearbridge', 'v': protocolVersion,
+    final data = utf8.encode(jsonEncode({'app': 'linkindrop', 'v': protocolVersion,
       'id': identity.id, 'name': name, 'port': port}));
     try { _discovery?.send(data, InternetAddress('255.255.255.255'), 45832); } catch (_) {}
     onChanged();

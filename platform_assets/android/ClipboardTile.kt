@@ -1,4 +1,4 @@
-package dev.resassance.nearbridge
+package dev.resassance.linkindrop
 
 import android.app.PendingIntent
 import android.content.Intent
@@ -6,6 +6,10 @@ import android.os.Build
 import android.service.quicksettings.TileService
 
 class ClipboardTile : TileService() {
+    override fun onStartListening() {
+        super.onStartListening()
+        qsTile?.let { it.label = NativeStrings.text(this, "Отправить буфер"); it.updateTile() }
+    }
     @Suppress("DEPRECATION")
     override fun onClick() {
         super.onClick()
