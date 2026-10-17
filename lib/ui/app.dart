@@ -468,11 +468,12 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   }
 
   int _page = 0;
+  double _viewportWidth = 800;
   Color get mint => Theme.of(context).colorScheme.primary;
   Color get background => Theme.of(context).scaffoldBackgroundColor;
   Color get surface => Theme.of(context).colorScheme.surface;
   Color get subdued => Theme.of(context).colorScheme.onSurfaceVariant;
-  bool get _compact => MediaQuery.sizeOf(context).width < 700;
+  bool get _compact => _viewportWidth < 700;
 
   void _navigate(int value) {
     if (_page == value) return;
@@ -526,7 +527,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   Widget _pageHeader(String title) => Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
     Expanded(child: Text(title, maxLines: 2, style: TextStyle(fontSize: _compact ? 25 : 32, fontWeight: FontWeight.w700, letterSpacing: -.6))),
     SizedBox(width: 8),
-    if (_compact && (MediaQuery.sizeOf(context).width < 360 || MediaQuery.textScalerOf(context).scale(14) > 18)) IconButton(key: ValueKey('received-shortcut'),
+    if (_compact && (_viewportWidth < 360 || MediaQuery.textScalerOf(context).scale(14) > 18)) IconButton(key: ValueKey('received-shortcut'),
       tooltip: tr(context, 'Полученные файлы'), onPressed: c.node == null ? null : c.revealReceivedFolder, icon: Icon(Icons.folder_open_outlined))
     else if (_compact) TextButton.icon(key: ValueKey('received-shortcut'),
       style: TextButton.styleFrom(padding: EdgeInsets.symmetric(horizontal: 6), minimumSize: Size(44, 44)),
@@ -659,7 +660,8 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   ]);
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(animation: c, builder: (context, _) {
+  Widget build(BuildContext context) => AnimatedBuilder(animation: c, builder: (context, _) => LayoutBuilder(builder: (context, constraints) {
+    _viewportWidth = constraints.maxWidth;
     final compact = _compact;
     final sections = <Widget>[
       if (c.loading) Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator())),
@@ -704,7 +706,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
         NavigationDestination(icon: Icon(Icons.devices_outlined), label: tr(context, 'Устройства')),
         NavigationDestination(icon: Icon(Icons.settings_outlined), label: tr(context, 'Настройки')),
       ]) : null);
-  });
+  }));
 
   Widget _devices() => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [Expanded(child: Text(tr(context, "Устройства"), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
@@ -844,7 +846,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
       leading: Icon(icon, color: mint), title: Text(title), tilePadding: EdgeInsets.symmetric(horizontal: 14),
       childrenPadding: EdgeInsets.fromLTRB(14, 0, 14, 14), children: [child]));
 
-  Widget _panel(Widget child) => Container(width: double.infinity, padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 500 ? 12 : 16),
+  Widget _panel(Widget child) => Container(width: double.infinity, padding: EdgeInsets.all(_viewportWidth < 500 ? 12 : 16),
     decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(8),
       border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)), child: child);
 
