@@ -1,4 +1,4 @@
-package dev.resassance.nearbridge
+package dev.resassance.linkindrop
 
 import android.content.ClipboardManager
 import android.content.Context
@@ -23,7 +23,7 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
     private val worker = Executors.newFixedThreadPool(2)
     val folders = FolderAccess(context) { activity }
     private val received = ReceiveFiles(context)
-    private val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "nearbridge/system")
+    private val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "linkindrop/system")
     private fun resolverType(uri: Uri): String = context.contentResolver.getType(uri) ?: "application/octet-stream"
     fun attach(value: MainActivity) { activity = value }
     fun detach(value: MainActivity) { if (activity === value) activity = null }
@@ -45,6 +45,13 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
                         catch (_: android.content.ActivityNotFoundException) {
                             context.startActivity(Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE).putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, if (tree == null) android.provider.DocumentsContract.buildDocumentUri("${context.packageName}.received", "received") else uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }
+                        result.success(null)
+                    }
+                    "setLanguage" -> {
+                        val language = call.argument<String>("language") ?: "system"
+                        require(language in listOf("system", "ru", "en"))
+                        context.getSharedPreferences("connection", Context.MODE_PRIVATE).edit().putString("language", language).commit()
+                        ConnectionService.update(context, NativeStrings.text(context, "Служба передачи файлов работает"))
                         result.success(null)
                     }
                     "setBackgroundSettings" -> {
@@ -75,14 +82,14 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
                         result.success(null)
                     }
                     "notificationSettings" -> { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); result.success(null) }
-                    "updateConnectionStatus" -> { ConnectionService.update(context, call.argument<String>("text") ?: "Ожидание устройств"); result.success(null) }
+                    "updateConnectionStatus" -> { ConnectionService.update(context, call.argument<String>("text") ?: NativeStrings.text(context, "Ожидание устройств")); result.success(null) }
                     "openReceivedFile" -> {
                         val uri = Uri.parse(call.argument<String>("location")!!)
                         context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, resolverType(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)); result.success(null)
                     }
                     "openRelease" -> {
                         val uri = Uri.parse(call.argument<String>("url")!!)
-                        if (uri.scheme != "https" || uri.host != "github.com" || !uri.path.orEmpty().startsWith("/resassance/nearbridge/releases/")) throw IllegalArgumentException("Invalid release URL")
+                        if (uri.scheme != "https" || uri.host != "github.com" || !uri.path.orEmpty().startsWith("/resassance/LinkInDrop/releases/")) throw IllegalArgumentException("Invalid release URL")
                         context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); result.success(null)
                     }
                     "clipboardSensitive" -> {
@@ -120,7 +127,7 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
         } else {
             shared.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { uris.add(it) }
         }
-        if (uris.size > 100) throw IllegalArgumentException("Не больше 100 файлов за раз")
+        if (uris.size > 100) throw IllegalArgumentException(NativeStrings.text(context, "Не больше 100 файлов за раз"))
         val paths = uris.map { uri ->
             var name = "file"
             context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
@@ -141,11 +148,11 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
                             val count = input.read(buffer)
                             if (count < 0) break
                             total += count
-                            if (total > 8796093022208L) throw IllegalArgumentException("Лимит файла — 8 ТБ")
+                            if (total > 8796093022208L) throw IllegalArgumentException(NativeStrings.text(context, "Лимит файла — 8 ТБ"))
                             target.write(buffer, 0, count)
                         }
                     }
-                } ?: throw IllegalArgumentException("Нет доступа к файлу")
+                } ?: throw IllegalArgumentException(NativeStrings.text(context, "Нет доступа к файлу"))
             } catch (error: Exception) {
                 directory.deleteRecursively()
                 throw error

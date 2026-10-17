@@ -1,145 +1,140 @@
-# Nearbridge
+<p align="center"><img src="assets/icons/brand.png" width="96" height="96" alt="LinkInDrop logo"></p>
+<h1 align="center">LinkInDrop</h1>
+<p align="center">Files, folders and clipboard. Across your devices.</p>
+<p align="center"><a href="README.md">English</a> · <a href="README.ru.md">Русский</a> · <a href="https://github.com/resassance/LinkInDrop/releases">Downloads</a></p>
 
-Shared clipboard and file transfers for Android, Windows and Linux.
+<p align="center">
+  <a href="https://github.com/resassance/LinkInDrop/actions/workflows/build.yml"><img src="https://github.com/resassance/LinkInDrop/actions/workflows/build.yml/badge.svg?branch=main" alt="Build status"></a>
+  <a href="https://github.com/resassance/LinkInDrop/releases"><img src="https://img.shields.io/github/v/release/resassance/LinkInDrop?include_prereleases&label=preview&color=2457ff" alt="Latest preview"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b" alt="MIT license"></a>
+</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/Flutter-3.32.8-02569B?logo=flutter&logoColor=white" alt="Flutter 3.32.8">
+  <img src="https://img.shields.io/badge/Dart-3.8-0175C2?logo=dart&logoColor=white" alt="Dart 3.8">
+  <img src="https://img.shields.io/badge/Kotlin-Android-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin for Android">
+  <img src="https://img.shields.io/badge/Node.js-22+-5FA04E?logo=nodedotjs&logoColor=white" alt="Node.js 22 or later">
+</p>
 
-Copy text or an image on one computer, paste it on another. Pair your phone once and send files through Android's Share menu.
+LinkInDrop connects Android, Windows and Linux devices for file transfers and a shared clipboard. Pair once, select a recipient, review your files and send. Connect over your local network, a private VPN linking your devices, or an optional self-hosted relay for remote access.
+
+**Preview software.** Version `0.3.0-alpha.4` introduces a new application ID and pairing protocol. Install it on every device and pair them again. Previous installations and their private data are separate; save received files before removing an old installation. Keep both devices running for transfers and remote browsing.
+
+## Contents
+
+- [Features](#features)
+- [Install](#install)
+- [Connect and transfer](#connect-and-transfer)
+- [Remote access and VPN](#remote-access-and-vpn)
+- [Privacy and access](#privacy-and-access)
+- [Technology](#technology)
+- [Build from source](#build-from-source)
+- [Project structure](#project-structure)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Features
+
+| Feature | What it does |
+| --- | --- |
+| Files and folders | Add files with a picker, desktop drag-and-drop or Android Share. Review photo thumbnails and documents before sending. |
+| Remote file browser | Browse explicitly shared files and folders on paired devices. Search, preview, download and save favorite folders. |
+| Shared clipboard | Send text and images. Automatic exchange is optional and configurable. |
+| Transfer queue | Pause, resume, retry and prioritize transfers. Show progress, speed and estimated time; resume verified blocks. |
+| Received files | Open the destination quickly and optionally sort loose files into type-based folders. Transferred folder trees stay intact. |
+| Photo backup | Copy new photos from selected folders, verify copies and restore them. Backup can be disabled; originals stay on the source device. |
+| Background operation | Use the desktop tray or enable Android's foreground service, battery exemption and optional boot recovery. |
+| Appearance | Compact desktop/mobile navigation, light/dark/system themes and Russian/English/system language preferences. |
 
 ## Install
 
-Download a build from [Releases](https://github.com/resassance/nearbridge/releases).
+Get packages and SHA-256 checksums from [Releases](https://github.com/resassance/LinkInDrop/releases).
 
-- Windows: extract the entire ZIP and run `nearbridge.exe`.
-- Linux: extract the archive and run `nearbridge/nearbridge`. Requires GTK 3, the Ayatana AppIndicator runtime (`libayatana-appindicator3-1` on Debian/Ubuntu) and a compatible desktop session.
-- Android: install the APK. Android 6 or newer. Starting with 0.3.0-alpha.1, APKs use a permanent signing key stored in GitHub Actions secrets. Upgrading from an earlier alpha may require one uninstall because its temporary certificate differs; subsequent releases retain app data and device pairing. Back up received files before uninstalling an earlier build.
+| Platform | Package | Start |
+| --- | --- | --- |
+| Windows x64 | `linkindrop-*-windows-x64.zip` | Extract the entire archive and run `LinkInDrop.exe`. |
+| Linux x64 | `linkindrop-*-linux-x64.tar.gz` | Extract and run `LinkInDrop/LinkInDrop`. Requires GTK 3 and an AppIndicator-compatible desktop session. |
+| Android 6+ | `linkindrop-*-android.apk` | Install the APK. Allow installation from the app used to download it. |
 
-Keep the app running. Use one local network or a private VPN connecting both devices; guest Wi-Fi may prevent devices from connecting. On Windows, choose **Разрешить локальные подключения** and approve the Windows administrator prompt. This adds app-specific inbound rules limited to the local subnet, without changing the firewall or network profile globally. Default ports: TCP 45831, UDP 45832. The actual listening port is shown below the QR and saved across restarts; if it changes because it is occupied, update the firewall rule.
+On Debian/Ubuntu, Linux runtime dependencies include `libgtk-3-0` and `libayatana-appindicator3-1`; package names vary by distribution. Official APK signatures are checked against the project's permanent signing certificate before publication.
 
-## Pair
+## Connect and transfer
 
-1. Choose **Добавить** on the computer.
-2. Scan the QR code on the phone, or copy the connection code to the other device and choose **Ввести код**.
-3. Approve the request on the first device.
+1. Open LinkInDrop on both devices and connect them to networks they can reach each other on.
+2. Choose **Add device**. Scan its QR code or enter its pairing code on the other device.
+3. Approve the request. Invitations expire after five minutes.
+4. Select a recipient, add files or a folder, review the selection and press **Transfer**.
+5. For browsing, enable sharing on the source device and choose the files or folders to expose. Open **Device files** from the other device.
 
-Codes expire after five minutes and are single-use. Internet codes also contain the relay endpoint and an unguessable tunnel identifier. Closing the QR window does not revoke the copied code. Share them only with your own devices. If there are several network adapters, choose the address belonging to the same network as the other device.
+On Windows, use **Allow local connections** if needed. Administrator approval creates application-specific inbound firewall rules for the local subnet. Default ports are TCP `45831` and UDP `45832`; the actual listening port can differ. Guest Wi-Fi and client isolation may prevent connections.
 
-New QR codes include alternative adapter addresses. Nearbridge probes them concurrently with certificate pinning, so an unreachable VPN adapter does not delay a reachable LAN adapter. Paired devices exchange updated addresses over authenticated connections and automatically reconnect through a working endpoint. Network probes have bounded timeouts and a short retry. Clipboard sends retry transient network failures with the same deduplicated message ID. A failed automatic clipboard send remains eligible for the next poll.
+## Remote access and VPN
 
-If pairing still times out, allow local-network traffic in VPN/WARP on both devices. WARP's local-network exclusion and a zapret filter that excludes private/VPN subnets are configuration requirements when those tools intercept the connection. Nearbridge uses direct sockets and never disables certificate checks. It cannot override a VPN kill switch, OS firewall, or packet filter that blocks every route. Connection errors include the destination address and can be tapped to show full details. Scan the PC's QR with the phone, then approve on the PC.
+For internet access, configure the same self-hosted relay on your devices, or connect them through a private network such as Tailscale and set the remote address. See [relay deployment](relay_server/README.md). LinkInDrop does not include a hosted relay service.
 
-## Clipboard
+**NekoBox on Android:** allow LAN bypass or exclude `dev.resassance.linkindrop` from VPN app routing. Optional direct Wi-Fi mode binds all LinkInDrop traffic to physical Wi-Fi/Ethernet while available, then returns to the system route. Other apps' routing stays unchanged. Android VPN lockdown or a VPN that forbids bypass can still block connections.
 
-Text and PNG images are transferred between paired devices. Automatic sending and receiving can be disabled globally or per device. Existing clipboard contents are not automatically sent on first connection; **Отправить буфер** sends them explicitly.
+Enable Android background operation explicitly. Battery exemption and notifications help keep transfers alive, but manufacturer restrictions and force-stop can interrupt them. Photo backup has an independent toggle.
 
-On Android 10+, ordinary apps cannot read another app's clipboard in the background. This release does not bypass that restriction. Open Nearbridge and choose **Отправить буфер**, use the notification / Quick Settings tile, or share content to Nearbridge. The tile opens the app before reading the clipboard. Automatic monitoring on Android runs only while Nearbridge is open. The foreground transfer service retains the Flutter engine after the window closes. Optional boot recovery and package-update recovery restart it. Force-stop, Doze and manufacturer battery restrictions can still interrupt availability; use the battery and notification status controls in the app.
+## Privacy and access
 
-Linux clipboard support depends on the desktop session. GNOME/Wayland background clipboard monitoring is not guaranteed in this alpha. There is no claim of universal Wayland support.
+- Device connections use TLS with pinned device certificates and authenticated tokens. Pairing requires approval.
+- Remote browsing exposes selected files and folders. Limit access per device, set expiry times or revoke grants.
+- The relay forwards the encrypted connection without decrypting contents. Its operator can observe connection metadata and traffic volume.
+- Received files stay in the selected destination. New files and changes inside a shared folder may become visible while its grant remains active.
 
-Clipboard images are limited to 8 MiB and text to 256 KiB. Some applications expose images as file references rather than PNG clipboard data; use file sharing in that case. Android clips marked sensitive are not sent. Sensitive detection on other platforms is not guaranteed: pause sharing before copying secrets.
+## Technology
 
-## Files, folders and transfer queue
+| Layer | Stack |
+| --- | --- |
+| App and UI | Flutter, Dart, Material 3, Flutter localizations |
+| Android | Kotlin, Storage Access Framework, foreground service, DocumentsProvider |
+| Desktop | `window_manager`, `tray_manager`, `desktop_drop`, `launch_at_startup` |
+| Transfers | Dart sockets/HTTP, TLS, certificate pinning, SHA-256, resumable blocks |
+| Optional relay | Node.js 22+, WebSocket (`ws`), Docker Compose, Caddy |
+| Checks and packaging | Flutter Test, Python tools, GitHub Actions |
 
-Select a device and choose **Выбрать файлы**, or drag files and folders onto its card on Windows/Linux. Android's Share menu adds files to the selected device's queue. Transfers can be paused, resumed, cancelled or retried. The queue survives app restarts; an interrupted active transfer is restored paused. Received folders retain their structure, including empty subfolders. A folder batch supports up to 20,000 items; select a smaller subtree for larger jobs.
+## Build from source
 
-Files support 64-bit sizes and offsets up to 8 TiB each, subject to filesystem limits and available space. Current devices transfer checked blocks of up to 4 MiB. Uploads keep a persistent offset on the receiver and are verified against the whole-file SHA-256 before completion. Downloads retain checked blocks and use versioned HTTP ranges; a changed source starts a new download rather than appending a different version. Acknowledged block uploads and completion requests are idempotent. Older devices can still send ordinary files and serve full-file downloads; resumable uploads require this version on both sides.
-
-### Shared files and folders
-
-On the source, open **Мои файлы и папки**, choose **Добавить файлы** or **Добавить папку**, and enable **Разрешить доступ к моим файлам и папкам**. On the receiver choose **Файлы устройства**. Open folders to navigate, use the download icon for one file or **Скачать папку** for a subtree, and load further pages with **Показать ещё**.
-
-Sharing a folder includes its readable descendants and future files. Up to 50 folders and 200 individual files can be published. Absolute paths, traversal, symbolic links and Nearbridge's private data are excluded from the shared view. Each page contains at most 200 items. Files larger than 8 TiB, virtual Android documents and documents with unknown size are omitted.
-
-On Android the system picker grants read access to the selected document tree and retains it across restarts. Protected storage roots remain subject to Android's restrictions. Folder contents are streamed rather than copied wholesale into the app. If a document provider disappears or Android revokes permission, choose the folder again.
-
-### Device-specific and temporary access
-
-Use **Кому доступно и срок** beside a shared item to select allowed paired devices and set an expiry of 15 minutes, one hour or one day. Unrestricted existing shares remain available to paired devices until configured otherwise. The rule applies to an entire shared subtree and is checked on browsing, search, preview and each new block request. Removing a share closes new access immediately. Expiry cannot erase files already received by another device.
-
-The device menu can separately disable incoming file uploads or clipboard sharing. Global receipt and sharing switches still apply. **Забыть устройство** revokes its local authentication token.
-
-### Search and previews
-
-The remote browser searches names recursively through the selected shared folder, or through accessible roots from the main shared view. Large searches return a continuation button instead of blocking the interface indefinitely. Image thumbnails and a text preview appear before downloading. Images are decoded off the UI isolate and thumbnails are bounded to 400 pixels; text previews show at most 64 KiB. Unsupported formats remain downloadable.
-
-### Automatic photo backup
-
-Choose a source under **Резервное копирование фото**, choose the destination device and enable automatic copying. The app checks once a minute while running and connected, and **Проверить сейчас** starts a manual scan. JPEG, PNG, HEIC and WebP photos are queued into `Photos/year/month` on the receiver. Content hashes prevent sending a second copy of the same acknowledged photo to the same device. Originals are never removed or renamed. This is an additive backup, not two-way synchronization or deletion mirroring. Android activity/process lifetime and battery restrictions still affect background availability.
-
-### Desktop background operation
-
-Windows/Linux can keep Nearbridge in the system tray when its window closes. The tray menu reopens the window or exits the app. **Запускать вместе с системой** opts into autostart. Tray support depends on the Linux desktop's indicator support; if the tray cannot be created the window uses ordinary close behavior. File drops on a device card enqueue uploads without blocking other controls.
-
-### Internet access without VPN
-
-Set the HTTPS WebSocket address of a Nearbridge relay under **Настроить доступ без VPN**, then pair using the normal QR or connection code. A device without a configured relay adopts the address from the code. The app tries authenticated direct addresses alongside the relay and uses a working route. Both devices only need outgoing connections to the relay; private-network VPN access remains supported.
-
-The relay forwards the devices' pinned TLS stream and does not decrypt clipboard or file contents. It can observe IP addresses, timing and traffic volume. The included Node server applies message-size, pending-connection and connection-count limits, with backpressure for binary forwarding. Public endpoints require `wss://`; `ws://` is permitted only on loopback for tests.
-
-No public relay is bundled or deployed automatically. A server and domain are required. See [relay_server/README.md](relay_server/README.md) for the runnable server, Docker Compose and automatic HTTPS setup. WARP alone does not provide peer-to-peer connectivity. A VPN kill switch that blocks every available direct or relay route still requires an exclusion in that VPN.
-
-## Data and connection
-
-No account or cloud storage is required. An optional self-hosted relay forwards encrypted connections for internet access. TLS connections pin the certificate fingerprint from the pairing code. Paired devices use separate random authentication tokens for each direction. Device keys and pairing records live in the application's private support directory; received files live in its `inbox` subdirectory. Android backups are disabled. Clipboard contents are not written to history. Activity metadata is kept in memory for the current session.
-
-Pairing grants file receipt and clipboard access to the selected device. **Забыть устройство** revokes its local token immediately. Disable receipt in the app to pause it. The protocol is new and has not undergone an independent security audit.
-
-## Reliability and quick actions
-
-The app checks GitHub releases when **Проверить обновления** is pressed and opens the official release page for installation. It does not execute downloaded code automatically. Settings and pairing records stay in the same application directory across updates. The Android build fails if signing secrets are absent or the APK certificate differs from the committed public certificate fingerprint. Keep a secure backup of the signing keystore and its password; do not rotate these secrets between releases.
-
-Choose **Выбрать папку получения** and select rename, skip or replace for name conflicts. Rename is the default. Android uses a persisted read/write document-tree grant; supported document providers must allow temporary files and rename. Failed delivery retains the staged source for retry. Free-space preflight reserves room for staging and a checked final copy; Android document-provider quotas can remain unknown. A folder can therefore require roughly twice its largest active file's size temporarily. Existing files replaced by the explicit replace policy are not retained as version history.
-
-The queue shows transferred bytes, average speed, estimated time and folder progress. Priority applies to waiting tasks, including the complete folder batch; it does not interrupt an active transfer. Speed limits pace checked blocks, so short bursts up to one block are possible. Repeat actions create a new transfer and require the original file or remote share to remain available. Favorite remote folders and recent recipients survive app restarts. Revoking a folder grant also blocks a saved favorite.
-
-Network diagnostics show the selected direct LAN/VPN or relay route, ping latency and failure category. Direct adapter classification is advisory; encrypted overlays can use ordinary private addresses. The copied diagnostic report includes only platform, version, service state, route categories and timings. It excludes device names, addresses, filesystem paths, pairing codes, fingerprints and authentication tokens.
-
-New photo transfers receive peer-bound receipts. **Проверить сохранённые копии** hashes the actual receiver-side file, detects deleted or modified copies and makes them eligible for copying again from the originals. **Копии и восстановление** downloads selected copies into `RestoredPhotos` in the receiving directory and validates the original digest. This can restore a copy even when the original source photo is gone. Both devices need this version for verification and restoration. Older backups without receipts remain unverified; successful upload alone is not a current integrity check. The transfer service does not bypass Android's background clipboard restrictions.
-
-## Develop
-
-Flutter 3.32.8, Python 3, and the usual Flutter toolchain for the target platform.
+Use Flutter **3.32.8**, Python 3 and platform build tools. Android needs Java 17 and the Android SDK; Windows needs Visual Studio desktop C++ tools; Linux needs Clang, CMake, Ninja and GTK/AppIndicator development headers.
 
 ```sh
+git clone https://github.com/resassance/LinkInDrop.git
+cd LinkInDrop
 python tool/bootstrap.py
+flutter pub get
+flutter run
+```
+
+Run the checks:
+
+```sh
+python tool/check_design.py
+python -m unittest tool/bootstrap_test.py tool/signing_test.py
 npm install --prefix relay_server
 npm test --prefix relay_server
-flutter pub get
-flutter test
-flutter run -d linux
+flutter analyze --no-fatal-infos
+flutter test --timeout 2m
 ```
 
-`tool/bootstrap.py` creates platform runners and installs the Android integration. Platform runners are generated, not stored in the repository. `super_clipboard` uses native code and may install its Rust/NDK dependencies on the first build.
+Build with `flutter build windows --release`, `flutter build linux --release` or `flutter build apk --release`. Run `python tool/package.py windows`, `linux` or `android` to create packages and checksums in `dist/`. Local Android builds without release credentials use development signing; official builds use the pinned release key.
 
-```sh
-flutter build apk --release
-flutter build linux --release
-flutter build windows --release
-```
+## Project structure
 
-The build workflow runs analysis and tests before packaging all three targets. Releases include SHA-256 checksum files. The tests cover pairing, certificate mismatch, clipboard validation and deduplication, file transfer, token revocation, and compact/desktop layouts.
+| Path | Purpose |
+| --- | --- |
+| [`lib/ui/`](lib/ui/) | Responsive screens and themes |
+| [`lib/core/`](lib/core/) | Pairing, transport, queue, sharing and backup |
+| [`lib/l10n/`](lib/l10n/) | Russian/English strings and formatting |
+| [`platform_assets/android/`](platform_assets/android/) | Native Android integration and icons |
+| [`relay_server/`](relay_server/) | Optional relay and deployment |
+| [`test/`](test/) · [`tool/`](tool/) | Tests, validation, signing and packaging |
 
-## Next
+## Contributing
 
-- Android automatic clipboard access: investigate an optional advanced setup without replacing the user's keyboard.
-- Test and document supported Linux desktop sessions.
-- Direct nearby transfer without an existing Wi-Fi router.
+Read [AGENTS.md](AGENTS.md). Source files must not contain comments; put explanations in Markdown. Preserve user filenames when translating UI. Identity and protocol changes require an explicit compatibility decision.
 
-MIT License. Copyright 2026 Александр Орлов.
+[Changelog](CHANGELOG.md) · [Release notes](RELEASE.md) · [Design verification](design-qa.md) · [Report an issue](https://github.com/resassance/LinkInDrop/issues)
 
+## License
 
-### Background transfers and Android file access
-
-Enable «Передавать при выключенном экране», allow unrestricted battery operation and notifications, and keep Nearbridge running on the computer (the tray is sufficient). The foreground service holds CPU and Wi-Fi locks while enabled, increasing battery use. Some Android vendors also require allowing autostart. Force-stop requires manually reopening Nearbridge.
-
-On the phone use «Мои файлы и папки» and the system picker to select files or a folder. Confirm «Использовать эту папку» for a tree. Adding content enables sharing; use the sharing switch to revoke all access temporarily. Individual files selected in older versions should be removed and reselected for persistent permissions.
-
-Turning photo backup off stops the scan and pauses its queued transfers. Turning it on resumes only automatically paused photo jobs. Copies already received and regular transfers are preserved.
-
-### Compact transfer workspace
-
-Use «Полученные файлы» to open the receive directory. On Android the built-in inbox appears as a read-only Nearbridge document-provider root; a selected external receive tree opens in the system file manager. On desktop the outlined drop zone accepts files and folders; if more than one device is paired, choose the recipient after dropping. Right-click the tray icon for Open or Quit.
-
-Loose incoming files are sorted by extension into Фото, Видео, Музыка, Документы, Архивы, Приложения or Другое. «Хранение и подключение» contains the sorting switch. Folder trees, backup layout and existing files are preserved.
-
-### NekoBox and local Wi-Fi
-
-Keep NekoBox enabled and allow LAN bypass, or exclude Nearbridge (dev.resassance.nearbridge) from VPN app routing. Nearbridge also offers «Nearbridge через Wi-Fi мимо VPN», an optional process-level physical-network binding. It is disabled by default and applies to all Nearbridge traffic, including relay connections and update checks; it does not alter other apps. Wi-Fi/Ethernet is preferred while present, with automatic return to the system route when unavailable. Android VPN lockdown and VPN bypass restrictions still apply. A successful route selection is not proof that the VPN permits the connection.
+[MIT](LICENSE). Copyright © 2026 Александр Орлов.

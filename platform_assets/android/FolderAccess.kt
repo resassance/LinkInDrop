@@ -1,4 +1,4 @@
-package dev.resassance.nearbridge
+package dev.resassance.linkindrop
 
 import android.app.Activity
 import android.content.Context
@@ -40,7 +40,7 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
 
     fun handle(call: MethodCall, result: MethodChannel.Result): Boolean {
         if (call.method == "pickFolder" || call.method == "pickSharedFiles") {
-            if (picker != null) { result.error("folder_busy", "Выбор папки уже открыт", null); return true }
+            if (picker != null) { result.error("folder_busy", NativeStrings.text(context, "Выбор папки уже открыт"), null); return true }
             picker = result
             pickerFiles = call.method == "pickSharedFiles"
             pickerWritable = call.argument<Boolean>("write") == true
@@ -48,7 +48,7 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
                 val intent = (if (pickerFiles) Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true) else Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)).addFlags(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
                         Intent.FLAG_GRANT_PREFIX_URI_PERMISSION or (if (pickerWritable) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0))
-                (activity() ?: throw IllegalStateException("Откройте Nearbridge для выбора папки")).startActivityForResult(intent, requestCode)
+                (activity() ?: throw IllegalStateException(NativeStrings.text(context, "Откройте LinkInDrop для выбора папки"))).startActivityForResult(intent, requestCode)
             } catch (error: Exception) {
                 picker = null
                 result.error("folder", error.message, null)
@@ -62,8 +62,8 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
                 val value: Any? = when (call.method) {
                     "statSharedDocument" -> {
                         val info = describe(document(call.argument<String>("uri")!!))
-                        val size = info.size ?: throw IllegalArgumentException("Размер файла неизвестен")
-                        if (info.directory || info.virtual || size < 0 || size > maxSize) throw IllegalArgumentException("Файл недоступен")
+                        val size = info.size ?: throw IllegalArgumentException(NativeStrings.text(context, "Размер файла неизвестен"))
+                        if (info.directory || info.virtual || size < 0 || size > maxSize) throw IllegalArgumentException(NativeStrings.text(context, "Файл недоступен"))
                         mapOf("name" to info.name, "size" to size, "modified" to info.modified, "version" to "${info.modified}:$size")
                     }
                     "openSharedDocument" -> openUri(document(call.argument<String>("uri")!!), call.argument<Number>("offset")?.toLong() ?: 0L, call.argument<Number>("length")?.toLong())
@@ -88,7 +88,7 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
                     "openReceived" -> openUri(Uri.parse(call.argument<String>("location")!!), call.argument<Number>("offset")?.toLong() ?: 0L, call.argument<Number>("length")?.toLong())
                     "readFolderFile" -> {
                         val id = call.argument<String>("reader")!!
-                        val reader = readers[id] ?: throw IllegalStateException("Чтение файла закрыто")
+                        val reader = readers[id] ?: throw IllegalStateException(NativeStrings.text(context, "Чтение файла закрыто"))
                         val bytes = ByteArray(minOf(256 * 1024L, reader.remaining).toInt())
                         val count = if (reader.remaining == 0L) -1 else reader.input.read(bytes)
                         if (count < 0) { readers.remove(id)?.input?.close(); null }
@@ -99,7 +99,7 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
                 }
                 main.post { result.success(value) }
             } catch (error: Exception) {
-                main.post { result.error("folder", error.message ?: "Папка недоступна", null) }
+                main.post { result.error("folder", error.message ?: NativeStrings.text(context, "Папка недоступна"), null) }
             }
         }
         return true
@@ -119,14 +119,14 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
         worker.execute {
             try {
                 val read = ((data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or (if (writable) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)))
-                if (writable && (read and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) throw SecurityException("Нет разрешения на запись папки")
-                if ((read and Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0) throw SecurityException("Нет разрешения на чтение папки")
+                if (writable && (read and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) throw SecurityException(NativeStrings.text(context, "Нет разрешения на запись папки"))
+                if ((read and Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0) throw SecurityException(NativeStrings.text(context, "Нет разрешения на чтение папки"))
                 if (files) {
                     val selected = uris.distinct().take(200)
                     for (item in selected) {
                         resolver.takePersistableUriPermission(item, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         val info = describe(document(item.toString()))
-                        if (info.directory || info.virtual || info.size == null || info.size < 0 || info.size > maxSize) throw IllegalArgumentException("Файл недоступен")
+                        if (info.directory || info.virtual || info.size == null || info.size < 0 || info.size > maxSize) throw IllegalArgumentException(NativeStrings.text(context, "Файл недоступен"))
                     }
                     main.post { result.success(selected.map { it.toString() }) }
                 } else {
@@ -143,7 +143,7 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
 
     private fun document(location: String): Uri {
         val uri = Uri.parse(location)
-        if (uri.scheme != "content" || resolver.persistedUriPermissions.none { it.uri == uri && it.isReadPermission }) throw SecurityException("Доступ к файлу отозван. Выберите файл заново.")
+        if (uri.scheme != "content" || resolver.persistedUriPermissions.none { it.uri == uri && it.isReadPermission }) throw SecurityException(NativeStrings.text(context, "Доступ к файлу отозван. Выберите файл заново."))
         return uri
     }
 
@@ -151,7 +151,7 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
         val uri = Uri.parse(location)
         if (uri.scheme != "content" || !DocumentsContract.isTreeUri(uri) ||
             resolver.persistedUriPermissions.none { it.uri == uri && it.isReadPermission }) {
-            throw SecurityException("Доступ к папке отозван. Выберите папку заново.")
+            throw SecurityException(NativeStrings.text(context, "Доступ к папке отозван. Выберите папку заново."))
         }
         return DocumentsContract.buildDocumentUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri))
     }
@@ -167,17 +167,17 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
                 (cursor.getInt(4) and DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT) != 0,
                 if (cursor.isNull(5)) 0L else cursor.getLong(5))
         }
-        throw IllegalArgumentException("Папка или файл недоступны")
+        throw IllegalArgumentException(NativeStrings.text(context, "Папка или файл недоступны"))
     }
 
     private fun children(parent: Uri): Uri = DocumentsContract.buildChildDocumentsUriUsingTree(
         parent, DocumentsContract.getDocumentId(parent))
 
     private fun resolve(location: String, path: String): Uri {
-        if (!validPath(path)) throw IllegalArgumentException("Недопустимый путь")
+        if (!validPath(path)) throw IllegalArgumentException(NativeStrings.text(context, "Недопустимый путь"))
         var current = root(location)
         for (part in path.split('/').filter { it.isNotEmpty() }) {
-            if (!describe(current).directory) throw IllegalArgumentException("Это не папка")
+            if (!describe(current).directory) throw IllegalArgumentException(NativeStrings.text(context, "Это не папка"))
             var next: String? = null
             resolver.query(children(current), columns, null, null, null)?.use { cursor ->
                 while (cursor.moveToNext()) {
@@ -185,15 +185,15 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
                 }
             }
             current = DocumentsContract.buildDocumentUriUsingTree(current,
-                next ?: throw IllegalArgumentException("Папка или файл больше не доступны"))
+                next ?: throw IllegalArgumentException(NativeStrings.text(context, "Папка или файл больше не доступны")))
         }
         return current
     }
 
     private fun list(location: String, path: String, offset: Int): Map<String, Any?> {
-        if (offset < 0 || offset > 100000) throw IllegalArgumentException("Недопустимая страница")
+        if (offset < 0 || offset > 100000) throw IllegalArgumentException(NativeStrings.text(context, "Недопустимая страница"))
         val parent = resolve(location, path)
-        if (!describe(parent).directory) throw IllegalArgumentException("Это не папка")
+        if (!describe(parent).directory) throw IllegalArgumentException(NativeStrings.text(context, "Это не папка"))
         val items = mutableListOf<Map<String, Any>>()
         var skipped = 0
         var more = false
@@ -212,25 +212,25 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
                     "modified" to (if (cursor.isNull(5)) 0L else cursor.getLong(5)),
                     "version" to "${if (cursor.isNull(5)) 0L else cursor.getLong(5)}:$size"))
             }
-        } ?: throw IllegalArgumentException("Нет доступа к папке")
+        } ?: throw IllegalArgumentException(NativeStrings.text(context, "Нет доступа к папке"))
         return mapOf("files" to items, "nextOffset" to if (more) offset + 200 else null)
     }
 
     private fun open(location: String, path: String, offset: Long, length: Long?): Map<String, Any> {
-        if (path.isEmpty()) throw IllegalArgumentException("Выберите файл")
-        if (readers.size >= 2) throw IllegalStateException("Дождитесь текущих скачиваний")
+        if (path.isEmpty()) throw IllegalArgumentException(NativeStrings.text(context, "Выберите файл"))
+        if (readers.size >= 2) throw IllegalStateException(NativeStrings.text(context, "Дождитесь текущих скачиваний"))
         val uri = resolve(location, path)
         return openUri(uri, offset, length)
     }
 
     private fun openUri(uri: Uri, offset: Long, length: Long?): Map<String, Any> {
-        if (readers.size >= 2) throw IllegalStateException("Дождитесь текущих скачиваний")
+        if (readers.size >= 2) throw IllegalStateException(NativeStrings.text(context, "Дождитесь текущих скачиваний"))
         val info = describe(uri)
-        val size = info.size ?: throw IllegalArgumentException("Размер файла неизвестен")
+        val size = info.size ?: throw IllegalArgumentException(NativeStrings.text(context, "Размер файла неизвестен"))
         if (info.directory || info.virtual || size < 0 || size > maxSize) {
-            throw IllegalArgumentException("Файл недоступен или больше 8 ТБ")
+            throw IllegalArgumentException(NativeStrings.text(context, "Файл недоступен или больше 8 ТБ"))
         }
-        val input = resolver.openInputStream(uri) ?: throw IllegalArgumentException("Нет доступа к файлу")
+        val input = resolver.openInputStream(uri) ?: throw IllegalArgumentException(NativeStrings.text(context, "Нет доступа к файлу"))
         try {
             if (offset < 0 || offset > size || (length != null && length < 0)) throw IllegalArgumentException("Invalid range")
             var skipped = 0L
@@ -246,7 +246,7 @@ class FolderAccess(private val context: Context, private val activity: () -> Act
     }
 
     fun close() {
-        picker?.error("folder", "Выбор папки закрыт", null)
+        picker?.error("folder", NativeStrings.text(context, "Выбор папки закрыт"), null)
         picker = null
         readers.values.forEach { try { it.input.close() } catch (_: Exception) {} }
         readers.clear()

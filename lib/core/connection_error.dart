@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -12,18 +13,18 @@ class ConnectionFailure implements Exception {
 
   String get message => switch (kind) {
     ConnectionFailureKind.unreachable =>
-      'Нет соединения с $target. Проверьте адрес и порт в QR, VPN на обоих устройствах, Windows Firewall и доступ к сети.',
+      localizeMessage("Нет соединения с {0}. Проверьте адрес и порт в QR, VPN на обоих устройствах, Windows Firewall и доступ к сети.", [target]),
     ConnectionFailureKind.certificate =>
-      'Не удалось проверить устройство $target. Создайте новый QR на нужном устройстве.',
+      localizeMessage("Не удалось проверить устройство {0}. Создайте новый QR на нужном устройстве.", [target]),
     ConnectionFailureKind.approvalTimeout =>
-      'Подтверждение на $target не получено. Откройте Nearbridge на другом устройстве и повторите подключение.',
-    ConnectionFailureKind.rejected => 'Подключение отклонено на $target.',
-    ConnectionFailureKind.expired => 'Код подключения больше не действует. Создайте новый QR.',
-    ConnectionFailureKind.busy => 'Устройство $target занято. Подождите и повторите подключение.',
+      localizeMessage("Подтверждение на {0} не получено. Откройте LinkInDrop на другом устройстве и повторите подключение.", [target]),
+    ConnectionFailureKind.rejected => localizeMessage("Подключение отклонено на {0}.", [target]),
+    ConnectionFailureKind.expired => localizeMessage("Код подключения больше не действует. Создайте новый QR."),
+    ConnectionFailureKind.busy => localizeMessage("Устройство {0} занято. Подождите и повторите подключение.", [target]),
   };
 
   @override
-  String toString() => '$message\n\nПодробности: $details';
+  String toString() => localizeMessage("{0}\n\nПодробности: {1}", [message, details]);
 }
 
 class RemoteFailure implements Exception {
@@ -31,7 +32,7 @@ class RemoteFailure implements Exception {
   final int status;
   final String reason;
   @override
-  String toString() => 'Запрос отклонён ($status): $reason';
+  String toString() => localizeMessage("Запрос отклонён ({0}): {1}", [status, reason]);
 }
 
 ConnectionFailure describePairingFailure(Object error, String target,

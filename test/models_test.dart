@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/models.dart';
+import 'package:linkindrop/core/models.dart';
 
 void main() {
   test('pairing codes round-trip and reject expired invitations', () {
@@ -10,6 +10,12 @@ void main() {
       port: 45831, fingerprint: 'a' * 64, secret: randomToken(),
       expiresAt: DateTime.now().add(const Duration(minutes: 5)));
     expect(PairInvite.parse(invite.encode()).name, 'Телефон');
+    expect(invite.encode(), startsWith('linkindrop://pair/'));
+    final payload = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(
+      invite.encode().substring('linkindrop://pair/'.length))))) as Map<String, dynamic>;
+    payload['v'] = protocolVersion - 1;
+    final incompatible = 'linkindrop://pair/${base64Url.encode(utf8.encode(jsonEncode(payload)))}';
+    expect(() => PairInvite.parse(incompatible), throwsFormatException);
     final expired = PairInvite(id: invite.id, name: invite.name, host: invite.host,
       port: invite.port, fingerprint: invite.fingerprint, secret: invite.secret,
       expiresAt: DateTime.now().subtract(const Duration(seconds: 1)));

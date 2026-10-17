@@ -4,12 +4,12 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/core/transfer_protocol.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/core/transfer_protocol.dart';
 
 void main() {
   test('upload blocks resume, reject corruption and complete idempotently', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-blocks-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-blocks-');
     try {
       final inbox = await Directory('${root.path}/inbox').create();
       final store = UploadStore(root, inbox);

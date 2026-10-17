@@ -1,6 +1,6 @@
-# Nearbridge relay
+# LinkInDrop relay
 
-The relay matches two outgoing WebSocket connections and forwards encrypted TLS bytes. Pairing, certificate pinning and per-direction device tokens remain between Nearbridge devices. The relay does not terminate the inner TLS connection or receive plaintext files and clipboard data. It can observe connection timing, IP addresses and traffic volume.
+The relay matches two outgoing WebSocket connections and forwards encrypted TLS bytes. Pairing, certificate pinning and per-direction device tokens remain between LinkInDrop devices. The relay does not terminate the inner TLS connection or receive plaintext files and clipboard data. It can observe connection timing, IP addresses and traffic volume.
 
 ## Deploy
 
@@ -10,7 +10,7 @@ Use a public server with a domain pointing to it and reachable TCP ports 80 and 
 RELAY_DOMAIN=relay.example.com docker compose up -d --build
 ```
 
-Caddy obtains a TLS certificate and forwards WebSockets to the relay. Do not expose the internal HTTP port directly to the internet. Set `wss://relay.example.com` in Nearbridge under **Настроить доступ без VPN**. The pairing code includes the relay address, so the other device adopts it when it has no relay configured. Both apps must remain running. Direct authenticated LAN/VPN routes are tried alongside the relay.
+Caddy obtains a TLS certificate and forwards WebSockets to the relay. Do not expose the internal HTTP port directly to the internet. Set `wss://relay.example.com` in LinkInDrop under **Настроить доступ без VPN**. The pairing code includes the relay address, so the other device adopts it when it has no relay configured. Both apps must remain running. Direct authenticated LAN/VPN routes are tried alongside the relay.
 
 No service has been deployed automatically. Replace the sample domain with your server's domain before running the command.
 

@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
@@ -10,11 +11,11 @@ import 'received_categories.dart';
 class InsufficientSpace implements Exception {
   const InsufficientSpace();
   @override
-  String toString() => 'Недостаточно свободного места для получения файла';
+  String toString() => localizeMessage("Недостаточно свободного места для получения файла");
 }
 
 Future<int?> freeBytes(String path) async {
-  if (Platform.isAndroid) return const MethodChannel('nearbridge/system').invokeMethod<int>('freeBytes', {'path': path});
+  if (Platform.isAndroid) return const MethodChannel('linkindrop/system').invokeMethod<int>('freeBytes', {'path': path});
   final result = Platform.isWindows
     ? await Process.run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', r'(Get-Item -LiteralPath $env:NB_STORAGE_PATH).PSDrive.Free'], environment: {'NB_STORAGE_PATH': path})
     : await Process.run('df', ['-Pk', path]);
@@ -41,13 +42,13 @@ class ReceiveStorage {
   final Map<String, String> _verifiedVersions = {};
   Future<void> _saving = Future.value();
   Future<void> _delivering = Future.value();
-  final channel = const MethodChannel('nearbridge/system');
+  final channel = const MethodChannel('linkindrop/system');
 
   Future<void> _protectDestination(String root, String relative) async {
     if (await Directory(root).resolveSymbolicLinks() != root) throw const FileSystemException('Unsafe destination');
     final private = await directory.resolveSymbolicLinks();
     final target = p.joinAll([root, ...portablePath(relative).split('/')]);
-    if (p.equals(private, target) || p.isWithin(private, target)) throw const FileSystemException('Нельзя получать файлы в служебные данные Nearbridge');
+    if (p.equals(private, target) || p.isWithin(private, target)) throw FileSystemException(localizeMessage("Нельзя получать файлы в служебные данные LinkInDrop"));
   }
 
   Future<void> createDirectory(String relative) async {
@@ -135,7 +136,7 @@ class ReceiveStorage {
     } else {
       final folder = Directory(root);
       final canonical = await folder.resolveSymbolicLinks();
-      if (canonical != root || (destination != null && (p.equals(canonical, directory.path) || p.isWithin(directory.path, canonical)))) throw const FileSystemException('Выберите папку вне данных Nearbridge');
+      if (canonical != root || (destination != null && (p.equals(canonical, directory.path) || p.isWithin(directory.path, canonical)))) throw FileSystemException(localizeMessage("Выберите папку вне данных LinkInDrop"));
       if (destination != null) await _protectDestination(root, relative);
       await requireSpace(root, size);
       var relativeName = portablePath(relative);
@@ -189,7 +190,7 @@ class ReceiveStorage {
     final item = receipts[token];
     if (item == null || item['peer'] != peer || item['skipped'] == true) throw const FileSystemException('Copy unavailable');
     final location = item['location'] as String;
-    if (location.startsWith('content://')) throw const FileSystemException('Восстановление этой копии выполняется через папку Android');
+    if (location.startsWith('content://')) throw FileSystemException(localizeMessage("Восстановление этой копии выполняется через папку Android"));
     if (await FileSystemEntity.type(location, followLinks: false) != FileSystemEntityType.file || await File(location).resolveSymbolicLinks() != location) throw const FileSystemException('Copy unavailable');
     return File(location);
   }

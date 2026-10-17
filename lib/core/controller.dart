@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -20,13 +21,19 @@ import 'desktop_shell.dart';
 import 'access_rules.dart';
 import 'release_info.dart';
 import 'receive_storage.dart';
+import 'send_selection.dart';
 
 class BridgeController extends ChangeNotifier {
-  BridgeController({ClipboardAdapter? clipboard}) : clipboard = clipboard ?? ClipboardAdapter();
+  BridgeController({ClipboardAdapter? clipboard}) : clipboard = clipboard ?? ClipboardAdapter() {
+    selection.addListener(notifyListeners);
+  }
   final ClipboardAdapter clipboard;
+  final selection = SendSelection();
+  String themePreference = 'system';
+  String languagePreference = 'system';
   final List<Activity> activities = [];
   final List<String> pendingFiles = [];
-  final platformChannel = const MethodChannel('nearbridge/system');
+  final platformChannel = const MethodChannel('linkindrop/system');
   BridgeNode? node;
   TransferQueue? queue;
   PhotoBackup? backup;
@@ -81,7 +88,7 @@ class BridgeController extends ChangeNotifier {
     notifyListeners();
     if (isAndroid && DateTime.now().difference(_lastNotification).inSeconds >= 1) {
       _lastNotification = DateTime.now();
-      unawaited(platformChannel.invokeMethod<void>('updateConnectionStatus', {'text': node?.transferName == null ? 'Устройств: $onlineCount · в очереди: ${queue?.pending ?? 0}' : '${node!.transferName} · ${((node!.transferProgress ?? 0) * 100).round()}%'}).catchError((Object _) {}));
+      unawaited(platformChannel.invokeMethod<void>('updateConnectionStatus', {'text': node?.transferName == null ? localizeMessage("Устройств: {0} · в очереди: {1}", [onlineCount, queue?.pending ?? 0]) : '${node!.transferName} · ${((node!.transferProgress ?? 0) * 100).round()}%'}).catchError((Object _) {}));
     }
   }
 
@@ -97,6 +104,8 @@ class BridgeController extends ChangeNotifier {
       final settings = File(p.join(directory!.path, 'settings.json'));
       if (await settings.exists()) {
         final data = jsonDecode(await settings.readAsString()) as Map<String, dynamic>;
+        themePreference = ['system', 'light', 'dark'].contains(data['theme']) ? data['theme'] as String : 'system';
+        languagePreference = ['system', 'ru', 'en'].contains(data['language']) ? data['language'] as String : 'system';
         deviceName = data['name'] as String? ?? deviceName;
         autoClipboard = data['autoClipboard'] as bool? ?? true;
         receiveClipboard = data['receiveClipboard'] as bool? ?? true;
@@ -115,6 +124,7 @@ class BridgeController extends ChangeNotifier {
         recentPeers.addAll((data['recentPeers'] as List? ?? []).cast<String>());
         favorites.addAll((data['favorites'] as List? ?? []).map((e) => (e as Map).cast<String, dynamic>()));
       }
+      messageLanguage = languagePreference;
       if (isAndroid) {
         localNetwork = await platformChannel.invokeMapMethod<String, dynamic>('setDirectWifi', {'enabled': androidDirectWifi}) ?? {};
       }
@@ -150,20 +160,20 @@ class BridgeController extends ChangeNotifier {
       queue!.start();
       if (Platform.isWindows || Platform.isLinux) {
         desktop = DesktopShell(directory: directory!, hideOnClose: () => closeToTray, shutdown: shutdown);
-        try { await desktop!.start(); } catch (error) { record(Activity('Фоновый режим недоступен', '$error', error: true)); }
+        try { await desktop!.start(); await desktop!.refreshLabels(languagePreference); } catch (error) { record(Activity(localizeMessage("Фоновый режим недоступен"), '$error', error: true)); }
       }
       final delivered = node!.received.receipts.values.where((item) => item['skipped'] != true).toList().reversed.take(20);
       final recorded = <String>{};
       for (final item in delivered) {
         final location = item['location'] as String;
         if (!recorded.add(location)) continue;
-        activities.add(Activity('Файл получен', item['name'] as String, path: location));
+        activities.add(Activity(localizeMessage("Файл получен"), item['name'] as String, path: location));
       }
       final received = await node!.inbox.list().where((item) => item is File &&
         !p.basename(item.path).startsWith('.') && !recorded.contains(item.path)).cast<File>().toList();
       received.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
       for (final file in received.take(activities.length >= 20 ? 0 : 20 - activities.length)) {
-        activities.add(Activity('Файл получен', p.basename(file.path).replaceFirst(RegExp(r'^[A-Za-z0-9_-]{11}_'), ''), path: file.path));
+        activities.add(Activity(localizeMessage("Файл получен"), p.basename(file.path).replaceFirst(RegExp(r'^[A-Za-z0-9_-]{11}_'), ''), path: file.path));
       }
       node!.clipboardReceivingEnabled = receiveClipboard;
       node!.receivingEnabled = receiveFiles;
@@ -177,6 +187,7 @@ class BridgeController extends ChangeNotifier {
           if (call.method == 'shared') await handleShared();
           if (call.method == 'localNetworkChanged') await refreshLocalNetwork(reconnect: true);
         });
+        await platformChannel.invokeMethod<void>('setLanguage', {'language': languagePreference});
         await platformChannel.invokeMethod<void>('setBackgroundSettings', {'enabled': androidBackground, 'boot': androidBoot});
         await refreshBackground();
         await handleShared();
@@ -192,6 +203,7 @@ class BridgeController extends ChangeNotifier {
   Future<void> _saveSettings() async {
     if (directory == null) return;
     final content = jsonEncode({
+      'theme': themePreference, 'language': languagePreference,
       'name': deviceName, 'autoClipboard': autoClipboard,
       'receiveClipboard': receiveClipboard, 'receiveFiles': receiveFiles,
       'shareFiles': shareFiles, 'closeToTray': closeToTray, 'relay': relayAddress,
@@ -206,6 +218,41 @@ class BridgeController extends ChangeNotifier {
       await file.rename(p.join(directory!.path, 'settings.json'));
     });
     await _settingsSaving;
+  }
+
+  Future<void> setAppearance({String? theme, String? language}) async {
+    if (theme != null && !['system', 'light', 'dark'].contains(theme)) throw ArgumentError.value(theme);
+    if (language != null && !['system', 'ru', 'en'].contains(language)) throw ArgumentError.value(language);
+    if (theme != null) themePreference = theme;
+    if (language != null) languagePreference = language;
+    messageLanguage = languagePreference;
+    notifyListeners();
+    await _saveSettings();
+    await desktop?.refreshLabels(languagePreference);
+    if (isAndroid) await platformChannel.invokeMethod<void>('setLanguage', {'language': languagePreference});
+  }
+
+  Future<void> stageFiles(List<String> paths, {Map<String, String> names = const {}}) async {
+    await selection.add(paths, names: names);
+    notifyListeners();
+  }
+
+  Future<void> removeSelected(SelectedSource source) async {
+    if (selection.sending) return;
+    selection.remove(source);
+    pendingFiles.remove(source.path);
+    await _cleanSharedSource(source.path);
+    notifyListeners();
+  }
+
+  Future<void> sendSelection() async {
+    final peer = selectedPeer;
+    if (peer == null) throw StateError(localizeMessage("Выберите устройство"));
+    await selection.send((items) async {
+      await enqueuePaths(peer, items.map((item) => item.path).toList(),
+        names: {for (final item in items) item.path: item.name});
+      pendingFiles.removeWhere((path) => items.any((item) => item.path == path));
+    });
   }
 
   Future<void> setSettings({bool? automatic, bool? clipboardReceiving, bool? filesReceiving,
@@ -223,7 +270,7 @@ class BridgeController extends ChangeNotifier {
 
   Future<void> rename(String value) async {
     final name = value.trim();
-    if (name.isEmpty || name.length > 80) throw StateError('Имя должно содержать 1–80 символов');
+    if (name.isEmpty || name.length > 80) throw StateError(localizeMessage("Имя должно содержать 1–80 символов"));
     deviceName = name;
     node?.name = name;
     await _saveSettings();
@@ -237,7 +284,7 @@ class BridgeController extends ChangeNotifier {
     try {
       await operation();
     } catch (error) {
-      record(Activity('Не получилось', '$error', error: true));
+      record(Activity(localizeMessage("Не получилось"), '$error', error: true));
     } finally {
       busy = false;
       notifyListeners();
@@ -261,9 +308,9 @@ class BridgeController extends ChangeNotifier {
 
   Future<void> configureNetwork() async {
     final current = node;
-    if (current == null) throw StateError('Соединение ещё не запущено');
+    if (current == null) throw StateError(localizeMessage("Соединение ещё не запущено"));
     await configureWindowsNetwork(current.port);
-    record(Activity('Локальные подключения разрешены', 'Windows Firewall · TCP ${current.port} · UDP 45832'));
+    record(Activity(localizeMessage("Локальные подключения разрешены"), 'Windows Firewall · TCP ${current.port} · UDP 45832'));
   }
 
   Future<void> setPeerClipboard(Peer peer, bool enabled) async {
@@ -321,10 +368,10 @@ class BridgeController extends ChangeNotifier {
 
   Future<void> pushClipboard() => _serializeClipboard(() async {
     if (isAndroid && await platformChannel.invokeMethod<bool>('clipboardSensitive') == true) {
-      throw StateError('Приложение пометило буфер как конфиденциальный');
+      throw StateError(localizeMessage("Приложение пометило буфер как конфиденциальный"));
     }
     final payload = await clipboard.read();
-    if (payload == null) throw StateError('В буфере нет текста или изображения');
+    if (payload == null) throw StateError(localizeMessage("В буфере нет текста или изображения"));
     await node!.sendClipboard(payload);
     _lastDigest = payload.digest;
   });
@@ -336,30 +383,36 @@ class BridgeController extends ChangeNotifier {
   });
 
   Future<void> sendText(String text) async {
-    if (text.trim().isEmpty) throw StateError('Введите текст');
+    if (text.trim().isEmpty) throw StateError(localizeMessage("Введите текст"));
     final data = Uint8List.fromList(utf8.encode(text));
-    if (data.length > maxTextBytes) throw StateError('Текст больше 256 КБ');
+    if (data.length > maxTextBytes) throw StateError(localizeMessage("Текст больше 256 КБ"));
     await node!.sendClipboard(ClipboardPayload(id: randomToken(16), type: 'text',
       data: data, createdAt: DateTime.now()));
   }
 
   Future<void> sendFile(String path, {String? name}) async {
     final peer = selectedPeer;
-    if (peer == null) throw StateError('Выберите устройство');
+    if (peer == null) throw StateError(localizeMessage("Выберите устройство"));
     await enqueuePaths(peer, [path], names: name == null ? null : {path: name});
   }
 
   Future<void> _cleanShared(TransferJob job) async {
-    final path = job.source;
-    if (job.kind == 'upload' && path != null && directory != null && p.isWithin(p.join(directory!.path, 'shared'), path)) {
-      final file = File(path);
-      if (await file.exists()) await file.delete();
+    if (job.kind == 'upload' && job.source != null) await _cleanSharedSource(job.source!);
+  }
+
+  Future<void> _cleanSharedSource(String path) async {
+    if (directory == null || !p.isWithin(p.join(directory!.path, 'shared'), path)) return;
+    final file = File(path);
+    if (await file.exists()) await file.delete();
+    final parent = file.parent;
+    if (p.isWithin(p.join(directory!.path, 'shared'), parent.path) && await parent.exists() && await parent.list().isEmpty) {
+      await parent.delete();
     }
   }
 
   Future<void> _executeJob(TransferJob job, void Function(double) progress) async {
     final peer = node!.peers[job.peerId];
-    if (peer == null) throw StateError('Устройство отключено');
+    if (peer == null) throw StateError(localizeMessage("Устройство отключено"));
     final clock = Stopwatch()..start();
     var lastBytes = 0;
     var lastTime = 0;
@@ -396,7 +449,7 @@ class BridgeController extends ChangeNotifier {
         job.digest = await node!.uploadSource(peer, job.id, job.name, open,
           relative: job.relative, expectedDigest: job.digest,
           onDigest: (digest) { job.digest = digest; unawaited(queue!.save()); });
-        if (node!.lastUploadReceipt?['skipped'] == true && job.kind == 'backup') throw StateError('Получатель пропустил фото из-за совпадения имени');
+        if (node!.lastUploadReceipt?['skipped'] == true && job.kind == 'backup') throw StateError(localizeMessage("Получатель пропустил фото из-за совпадения имени"));
         job.receipt = node!.lastUploadReceipt?['receipt'] as String?;
         job.skipped = node!.lastUploadReceipt?['skipped'] == true;
       }
@@ -414,7 +467,7 @@ class BridgeController extends ChangeNotifier {
         jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'uploadDirectory', name: label, batchId: batch, relative: '${batch}_$label'));
         await for (final entry in root.list(recursive: true, followLinks: false)) {
           if (entry is Link) continue;
-          if (jobs.length >= 20000) throw StateError('В папке больше 20 000 элементов. Выберите подпапку.');
+          if (jobs.length >= 20000) throw StateError(localizeMessage("В папке больше 20 000 элементов. Выберите подпапку."));
           final relative = p.relative(entry.path, from: path).split(p.separator).join('/');
           if (entry is Directory) {
             jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'uploadDirectory',
@@ -426,16 +479,16 @@ class BridgeController extends ChangeNotifier {
             name: p.basename(entry.path), source: entry.path, batchId: batch, relative: '${batch}_$label/$relative'));
         }
       } else if (type == FileSystemEntityType.file) {
-        if (await File(path).length() > maxFileBytes) throw StateError('Лимит файла — 8 ТБ');
+        if (await File(path).length() > maxFileBytes) throw StateError(localizeMessage("Лимит файла — 8 ТБ"));
         jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'upload', name: names?[path] ?? p.basename(path), source: path));
-      } else { throw StateError('Файл или папка недоступны: $path'); }
+      } else { throw StateError(localizeMessage("Файл или папка недоступны: {0}", [path])); }
     }
     for (final job in jobs) {
       if (job.source != null) job.totalBytes = await File(job.source!).length();
     }
     selectPeer(peer.id);
     await queue!.addAll(jobs);
-    record(Activity('Добавлено в очередь', '${jobs.length} файлов → ${peer.name}'));
+    record(Activity(localizeMessage("Добавлено в очередь"), localizeMessage("{0} файлов → {1}", [jobs.length, peer.name])));
   }
 
   Future<void> enqueueDownload(Peer peer, SharedFile entry) async {
@@ -462,21 +515,21 @@ class BridgeController extends ChangeNotifier {
         if (!child.relativePath!.startsWith(prefix)) throw const FormatException('Invalid folder response');
         jobs.add(TransferJob(id: randomToken(16), peerId: peer.id, kind: 'download',
           name: child.name, entry: child, totalBytes: child.size, batchId: group, relative: '$group/${child.relativePath!.substring(prefix.length)}'));
-        if (jobs.length > 20000) throw StateError('В папке больше 20 000 файлов. Выберите подпапку.');
+        if (jobs.length > 20000) throw StateError(localizeMessage("В папке больше 20 000 файлов. Выберите подпапку."));
       }
     }
     await queue!.addAll(jobs);
-    record(Activity('Папка добавлена в очередь', '${entry.name} · ${jobs.length} файлов'));
+    record(Activity(localizeMessage("Папка добавлена в очередь"), localizeMessage("{0} · {1} файлов", [entry.name, jobs.length])));
   }
 
   Future<void> revealReceivedFolder() async {
     try { await openReceivedFolder(); }
-    catch (error) { record(Activity('Не удалось открыть папку', '$error', error: true)); }
+    catch (error) { record(Activity(localizeMessage("Не удалось открыть папку"), '$error', error: true)); }
   }
 
   Future<void> openReceivedFolder() async {
     final current = node;
-    if (current == null) throw StateError('Папка получения ещё не готова');
+    if (current == null) throw StateError(localizeMessage("Папка получения ещё не готова"));
     if (isAndroid) {
       await platformChannel.invokeMethod<void>('openReceivedFolder', {'tree': receiveDestination});
       return;
@@ -484,7 +537,7 @@ class BridgeController extends ChangeNotifier {
     final folder = receiveDestination ?? current.inbox.path;
     await Directory(folder).create(recursive: true);
     final result = Platform.isWindows ? await Process.run('explorer.exe', [folder]) : await Process.run('xdg-open', [folder]);
-    if (result.exitCode != 0 && !(Platform.isWindows && result.exitCode == 1)) throw StateError('Не удалось открыть папку получения');
+    if (result.exitCode != 0 && !(Platform.isWindows && result.exitCode == 1)) throw StateError(localizeMessage("Не удалось открыть папку получения"));
   }
 
   Future<void> setSortReceived(bool enabled) async {
@@ -507,7 +560,7 @@ class BridgeController extends ChangeNotifier {
   }
 
   Future<void> setDirectWifi(bool enabled) async {
-    if (node?.hasActiveTransfers == true || queue?.active != null) throw StateError('Сначала приостановите текущую передачу');
+    if (node?.hasActiveTransfers == true || queue?.active != null) throw StateError(localizeMessage("Сначала приостановите текущую передачу"));
     localNetwork = await platformChannel.invokeMapMethod<String, dynamic>('setDirectWifi', {'enabled': enabled}) ?? {};
     androidDirectWifi = enabled;
     await _saveSettings();
@@ -520,8 +573,8 @@ class BridgeController extends ChangeNotifier {
     if (destination != null && !destination.startsWith('content://')) {
       final folder = Directory(destination);
       final root = await folder.resolveSymbolicLinks();
-      if (!p.equals(root, p.normalize(destination)) || p.equals(root, directory!.path) || p.isWithin(directory!.path, root)) throw StateError('Выберите папку вне данных Nearbridge');
-      final probe = File(p.join(root, '.nearbridge-${randomToken(8)}'));
+      if (!p.equals(root, p.normalize(destination)) || p.equals(root, directory!.path) || p.isWithin(directory!.path, root)) throw StateError(localizeMessage("Выберите папку вне данных LinkInDrop"));
+      final probe = File(p.join(root, '.linkindrop-${randomToken(8)}'));
       try { await probe.writeAsString('', flush: true); } finally { if (await probe.exists()) await probe.delete(); }
       destination = root;
     }
@@ -547,7 +600,7 @@ class BridgeController extends ChangeNotifier {
   Future<void> setPhotoBackup(bool enabled) async {
     final current = backup;
     if (current == null) return;
-    if (enabled && (current.peerId == null || current.sources.roots().isEmpty)) throw StateError('Выберите устройство и папку с фото');
+    if (enabled && (current.peerId == null || current.sources.roots().isEmpty)) throw StateError(localizeMessage("Выберите устройство и папку с фото"));
     final saving = current.setEnabled(enabled);
     await queue?.setBackupEnabled(enabled);
     await saving;
@@ -570,7 +623,7 @@ class BridgeController extends ChangeNotifier {
 
   Future<void> checkUpdates() async {
     newerRelease = await checkRelease();
-    updateMessage = newerRelease == null ? 'Установлена актуальная версия' : 'Доступна ${newerRelease!['version']}';
+    updateMessage = newerRelease == null ? localizeMessage("Установлена актуальная версия") : localizeMessage("Доступна {0}", [newerRelease!['version']]);
     notifyListeners();
   }
 
@@ -580,7 +633,7 @@ class BridgeController extends ChangeNotifier {
     if (isFavorite(peer, folder)) {
       favorites.removeWhere((f) => f['peer'] == peer && f['folder'] == folder.folderId && f['path'] == folder.relativePath);
     } else {
-      if (favorites.length >= 50) throw StateError('Можно сохранить 50 папок');
+      if (favorites.length >= 50) throw StateError(localizeMessage("Можно сохранить 50 папок"));
       favorites.add({'peer': peer, 'folder': folder.folderId, 'path': folder.relativePath, 'entry': folder.toJson()});
     }
     await _saveSettings(); notifyListeners();
@@ -596,7 +649,7 @@ class BridgeController extends ChangeNotifier {
 
   Future<void> restorePhoto(Map<String, dynamic> copy) async {
     final peer = node!.peers[copy['peer']];
-    if (peer == null) throw StateError('Устройство не привязано');
+    if (peer == null) throw StateError(localizeMessage("Устройство не привязано"));
     await queue!.addAll([TransferJob(id: randomToken(16), peerId: peer.id, kind: 'download', name: copy['name'] as String,
       digest: copy['digest'] as String, totalBytes: copy['bytes'] as int? ?? 0,
       relative: 'RestoredPhotos/${copy['name']}',
@@ -626,7 +679,7 @@ class BridgeController extends ChangeNotifier {
     await node!.configureRelay(address.isEmpty ? null : address);
     relayAddress = address.isEmpty ? null : address;
     await _saveSettings();
-    record(Activity('Интернет-подключение', node!.relayHost?.online == true ? 'Ретранслятор подключён' : address.isEmpty ? 'Ретранслятор выключен' : 'Ожидается подключение к серверу'));
+    record(Activity(localizeMessage("Интернет-подключение"), node!.relayHost?.online == true ? localizeMessage("Ретранслятор подключён") : address.isEmpty ? localizeMessage("Ретранслятор выключен") : localizeMessage("Ожидается подключение к серверу")));
     notifyListeners();
   }
 
@@ -654,7 +707,7 @@ class BridgeController extends ChangeNotifier {
       if (selectedPeer == null && peers.where((p) => p.online).length == 1) {
         selectedPeerId = peers.firstWhere((p) => p.online).id;
       }
-      if (selectedPeer != null) await run(sendPendingFiles);
+      await stageFiles(files);
       notifyListeners();
     }
   }
@@ -673,6 +726,8 @@ class BridgeController extends ChangeNotifier {
   void dispose() {
     _clipboardTimer?.cancel();
     queue?.removeListener(notifyListeners);
+    selection.removeListener(notifyListeners);
+    selection.dispose();
     super.dispose();
   }
 }

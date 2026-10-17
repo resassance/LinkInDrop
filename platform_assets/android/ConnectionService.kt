@@ -1,4 +1,4 @@
-package dev.resassance.nearbridge
+package dev.resassance.linkindrop
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -22,8 +22,8 @@ class ConnectionService : Service() {
             val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val clipboard = PendingIntent.getActivity(context, 1, Intent(context, MainActivity::class.java).putExtra("clipboard", true), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, "connection") else Notification.Builder(context)
-            return builder.setContentTitle("Nearbridge").setContentText(text).setSmallIcon(R.drawable.tile_icon)
-                .setContentIntent(open).setOngoing(true).addAction(Notification.Action.Builder(null, "Отправить буфер", clipboard).build()).build()
+            return builder.setContentTitle("LinkInDrop").setContentText(text).setSmallIcon(R.drawable.tile_icon)
+                .setContentIntent(open).setOngoing(true).addAction(Notification.Action.Builder(null, NativeStrings.text(context, "Отправить буфер"), clipboard).build()).build()
         }
         fun update(context: Context, text: String) {
             if (running) context.getSystemService(NotificationManager::class.java).notify(731, notification(context, text))
@@ -41,11 +41,11 @@ class ConnectionService : Service() {
     }
     override fun onCreate() {
         super.onCreate()
-        if (Build.VERSION.SDK_INT >= 26) getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("connection", "Подключение устройств", NotificationManager.IMPORTANCE_LOW))
-        startForeground(731, notification(this, "Служба передачи файлов работает"))
+        if (Build.VERSION.SDK_INT >= 26) getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("connection", NativeStrings.text(this, "Подключение устройств"), NotificationManager.IMPORTANCE_LOW))
+        startForeground(731, notification(this, NativeStrings.text(this, "Служба передачи файлов работает")))
         running = true
-        wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "nearbridge:connection").apply { setReferenceCounted(false) }
-        wifi = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "nearbridge:connection").apply { setReferenceCounted(false); acquire() }
+        wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "linkindrop:connection").apply { setReferenceCounted(false) }
+        wifi = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "linkindrop:connection").apply { setReferenceCounted(false); acquire() }
         handler.post(renew)
         (application as BridgeApplication).ensureEngine()
     }

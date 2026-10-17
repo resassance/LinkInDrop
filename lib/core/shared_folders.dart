@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -79,9 +80,9 @@ class SharedFolders {
 
   Future<void> add(String location, {String? name}) async {
     if (_roots.values.any((r) => r['location'] == location)) return;
-    if (_roots.length >= 50) throw StateError('Можно открыть доступ к 50 папкам');
+    if (_roots.length >= 50) throw StateError(localizeMessage("Можно открыть доступ к 50 папкам"));
     if (_document(location)) {
-      if (documents == null) throw StateError('Документы Android недоступны');
+      if (documents == null) throw StateError(localizeMessage("Документы Android недоступны"));
       await documents!.validate(location);
     } else {
       location = p.normalize(p.absolute(location));

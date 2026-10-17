@@ -35,7 +35,7 @@ class ClipboardAdapter {
     }
     if (reader.canProvide(Formats.plainText)) {
       final text = await reader.readValue(Formats.plainText);
-      if (text == null || text.isEmpty || text.startsWith('nearbridge://pair/')) return null;
+      if (text == null || text.isEmpty || text.startsWith('linkindrop://pair/')) return null;
       final bytes = Uint8List.fromList(utf8.encode(text));
       if (bytes.length > maxTextBytes) throw StateError('Текст в буфере больше 256 КБ');
       return ClipboardPayload(id: randomToken(16), type: 'text', data: bytes,

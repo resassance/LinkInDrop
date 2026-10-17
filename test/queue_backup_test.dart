@@ -2,14 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nearbridge/core/models.dart';
-import 'package:nearbridge/core/photo_backup.dart';
-import 'package:nearbridge/core/shared_folders.dart';
-import 'package:nearbridge/core/transfer_queue.dart';
+import 'package:linkindrop/core/models.dart';
+import 'package:linkindrop/core/photo_backup.dart';
+import 'package:linkindrop/core/shared_folders.dart';
+import 'package:linkindrop/core/transfer_queue.dart';
 
 void main() {
   test('queue pause is durable and can resume after application restart', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-queue-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-queue-');
     final blocked = Completer<void>();
     final started = Completer<void>();
     var executions = 0;
@@ -39,7 +39,7 @@ void main() {
   });
 
   test('photo backup deduplicates content and records only acknowledged copies', () async {
-    final root = await Directory.systemTemp.createTemp('nearbridge-backup-');
+    final root = await Directory.systemTemp.createTemp('linkindrop-backup-');
     final queued = <TransferJob>[];
     final private = await Directory('${root.path}/private').create();
     final photos = await Directory('${root.path}/Camera').create();

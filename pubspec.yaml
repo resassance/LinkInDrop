@@ -1,11 +1,13 @@
-name: nearbridge
+name: linkindrop
 description: Clipboard and file sharing between your devices.
 publish_to: none
-version: 0.3.0-alpha.3+7
+version: 0.3.0-alpha.4+8
 environment:
   sdk: '>=3.8.0 <4.0.0'
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
   desktop_drop: 0.5.0
   window_manager: 0.4.3
@@ -29,6 +31,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/icons/brand.png
     - assets/icons/tray.png
     - assets/icons/tray.ico
     - assets/windows/configure-network.ps1
