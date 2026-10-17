@@ -1,7 +1,7 @@
 name: Build
 on:
   push:
-    branches: [main]
+    branches: [main, design/linkindrop]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -9,6 +9,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -21,6 +22,8 @@ jobs:
           node-version: '22'
       - run: npm install --prefix relay_server
       - run: npm test --prefix relay_server
+      - run: python tool/check_design.py
+      - run: python -m unittest tool/bootstrap_test.py
       - run: flutter pub get
       - run: dart format lib test
       - run: flutter analyze --no-fatal-infos
@@ -38,6 +41,7 @@ jobs:
           - os: ubuntu-24.04
             platform: android
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4

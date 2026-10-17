@@ -97,7 +97,7 @@ void main() {
   });
 
   testWidgets('compact desktop has a marked drop zone and a working received-folder shortcut', (tester) async {
-    final controller = _FolderController()..loading = false;
+    final controller = _FolderController()..loading = false..languagePreference = 'ru';
     controller.node = BridgeNode(directory: Directory('/tmp/unused'), name: 'test', onPairRequest: (_) async => false,
       onClipboard: (_) async {}, onActivity: (_) {}, onChanged: () {});
     await tester.binding.setSurfaceSize(const Size(1100, 900));

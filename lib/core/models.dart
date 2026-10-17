@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -91,7 +92,7 @@ class PairInvite {
   static PairInvite parse(String value) {
     final text = value.trim();
     if (text.length > 4096 || !text.startsWith('nearbridge://pair/')) {
-      throw const FormatException('Неверный код подключения');
+      throw FormatException(localizeMessage("Неверный код подключения"));
     }
     final data = jsonDecode(utf8.decode(base64Url.decode(
       base64Url.normalize(text.substring('nearbridge://pair/'.length)))));
@@ -103,7 +104,7 @@ class PairInvite {
         data['fingerprint'] is! String || data['secret'] is! String ||
         !RegExp(r'^[a-f0-9]{64}$').hasMatch(data['fingerprint'] as String) ||
         !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(data['secret'] as String)) {
-      throw const FormatException('Неверный код подключения');
+      throw FormatException(localizeMessage("Неверный код подключения"));
     }
     if ((data['relayUrl'] != null || data['relayRoom'] != null) &&
         (data['relayUrl'] is! String || !validRelayUrl(data['relayUrl'] as String) ||
@@ -112,7 +113,7 @@ class PairInvite {
     }
     final expires = DateTime.fromMillisecondsSinceEpoch(data['expires'] as int);
     if (!expires.isAfter(DateTime.now())) {
-      throw const FormatException('Код истёк. Создайте новый');
+      throw FormatException(localizeMessage("Код истёк. Создайте новый"));
     }
     return PairInvite(id: data['id'] as String, name: data['name'] as String,
       host: data['host'] as String, port: data['port'] as int,
@@ -146,7 +147,7 @@ class Peer {
   bool activeRelay = false;
   int? latencyMs;
   String? connectionFailure;
-  String get routeLabel => activeRelay ? "Ретранслятор" : remoteHost == connectionHost ? "VPN / удалённый адрес" : "Прямое соединение (LAN/VPN)";
+  String get routeLabel => activeRelay ? localizeMessage("Ретранслятор") : remoteHost == connectionHost ? localizeMessage("VPN / удалённый адрес") : localizeMessage("Прямое соединение (LAN/VPN)");
   List<String> additionalHosts;
   String? activeHost;
   int? activePort;

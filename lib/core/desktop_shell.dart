@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../l10n/messages.dart';
+
 class DesktopShell with TrayListener, WindowListener {
   DesktopShell({required this.directory, required this.hideOnClose, required this.shutdown});
   final Directory directory;
@@ -21,6 +23,14 @@ class DesktopShell with TrayListener, WindowListener {
     await windowManager.ensureInitialized();
     windowManager.addListener(this);
     launchAtStartup.setup(appName: 'Nearbridge', appPath: Platform.resolvedExecutable);
+    final legacyStartup = await launchAtStartup.isEnabled();
+    launchAtStartup.setup(appName: 'LinkInDrop', appPath: Platform.resolvedExecutable);
+    if (legacyStartup) {
+      await launchAtStartup.enable();
+      launchAtStartup.setup(appName: 'Nearbridge', appPath: Platform.resolvedExecutable);
+      await launchAtStartup.disable();
+      launchAtStartup.setup(appName: 'LinkInDrop', appPath: Platform.resolvedExecutable);
+    }
     startupEnabled = await launchAtStartup.isEnabled();
     try {
       final extension = Platform.isWindows ? 'ico' : 'png';
@@ -29,16 +39,26 @@ class DesktopShell with TrayListener, WindowListener {
       await file.writeAsBytes(bytes.buffer.asUint8List());
       trayManager.addListener(this);
       await trayManager.setIcon(file.path);
-      await trayManager.setContextMenu(Menu(items: [
-        MenuItem(key: 'show', label: 'Открыть Nearbridge'),
-        MenuItem.separator(), MenuItem(key: 'quit', label: 'Выйти'),
-      ]));
+      if (Platform.isLinux) {
+        try { await windowManager.setIcon(file.path); } catch (_) {}
+      }
+      await windowManager.setTitle('LinkInDrop');
       trayAvailable = true;
       await windowManager.setPreventClose(true);
     } catch (_) {
       trayAvailable = false;
       await windowManager.setPreventClose(false);
     }
+  }
+
+  Future<void> refreshLabels(String language) async {
+    if (!trayAvailable) return;
+    final russian = resolveLanguage(language) == 'ru';
+    await trayManager.setContextMenu(Menu(items: [
+      MenuItem(key: 'show', label: russian ? 'Открыть LinkInDrop' : 'Open LinkInDrop'),
+      MenuItem.separator(), MenuItem(key: 'quit', label: russian ? 'Выйти' : 'Quit'),
+    ]));
+    try { await trayManager.setToolTip('LinkInDrop'); } catch (_) {}
   }
 
   Future<void> setStartup(bool enabled) async {

@@ -47,6 +47,13 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
                         }
                         result.success(null)
                     }
+                    "setLanguage" -> {
+                        val language = call.argument<String>("language") ?: "system"
+                        require(language in listOf("system", "ru", "en"))
+                        context.getSharedPreferences("connection", Context.MODE_PRIVATE).edit().putString("language", language).commit()
+                        ConnectionService.update(context, NativeStrings.text(context, "Служба передачи файлов работает"))
+                        result.success(null)
+                    }
                     "setBackgroundSettings" -> {
                         val enabled = call.argument<Boolean>("enabled") == true
                         val boot = enabled && call.argument<Boolean>("boot") == true
@@ -75,7 +82,7 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
                         result.success(null)
                     }
                     "notificationSettings" -> { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); result.success(null) }
-                    "updateConnectionStatus" -> { ConnectionService.update(context, call.argument<String>("text") ?: "Ожидание устройств"); result.success(null) }
+                    "updateConnectionStatus" -> { ConnectionService.update(context, call.argument<String>("text") ?: NativeStrings.text(context, "Ожидание устройств")); result.success(null) }
                     "openReceivedFile" -> {
                         val uri = Uri.parse(call.argument<String>("location")!!)
                         context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, resolverType(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)); result.success(null)
@@ -120,7 +127,7 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
         } else {
             shared.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { uris.add(it) }
         }
-        if (uris.size > 100) throw IllegalArgumentException("Не больше 100 файлов за раз")
+        if (uris.size > 100) throw IllegalArgumentException(NativeStrings.text(context, "Не больше 100 файлов за раз"))
         val paths = uris.map { uri ->
             var name = "file"
             context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
@@ -141,11 +148,11 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
                             val count = input.read(buffer)
                             if (count < 0) break
                             total += count
-                            if (total > 8796093022208L) throw IllegalArgumentException("Лимит файла — 8 ТБ")
+                            if (total > 8796093022208L) throw IllegalArgumentException(NativeStrings.text(context, "Лимит файла — 8 ТБ"))
                             target.write(buffer, 0, count)
                         }
                     }
-                } ?: throw IllegalArgumentException("Нет доступа к файлу")
+                } ?: throw IllegalArgumentException(NativeStrings.text(context, "Нет доступа к файлу"))
             } catch (error: Exception) {
                 directory.deleteRecursively()
                 throw error

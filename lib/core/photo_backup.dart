@@ -1,3 +1,4 @@
+import '../l10n/messages.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -97,7 +98,7 @@ class PhotoBackup {
         final pending = <(String, int)>[('', 0)];
         var visited = 0;
         while (pending.isNotEmpty && !stopped()) {
-          if (++visited > 100000) throw StateError('Слишком много папок для одной проверки');
+          if (++visited > 100000) throw StateError(localizeMessage("Слишком много папок для одной проверки"));
           final next = pending.removeLast();
           final page = await sources.list(root.id, next.$1, offset: next.$2);
           if (page.nextOffset != null) pending.add((next.$1, page.nextOffset!));
