@@ -2,7 +2,7 @@
 
 ## Status
 
-The user approved the visual direction and authorized local implementation. The interface, themes, translations and platform icon assets have been changed locally. Flutter compilation, widget tests and rendered design QA must pass before treating the implementation as complete. Do not push, publish or release until the user explicitly authorizes it.
+The user approved the visual direction and authorized implementation. On 2026-10-17, the user authorized GitHub Actions validation on the separate `design/linkindrop` branch. This authorization does not include merging into `main`, tagging or publishing a release. Flutter analysis, all 62 Flutter tests and Windows/Linux/Android release builds passed. Rendered design QA still requires screenshots and comparison against the approved references.
 
 ## Approved direction
 
@@ -58,9 +58,11 @@ Mock data is illustrative. The three files in the mobile preview total 12.4 MB; 
 - Preserve existing pairing, transfer, remote file browsing, background operation and VPN-routing behavior.
 - Do not add source-code comments.
 - Do not rename package or application identifiers as part of a display-name change without checking update and pairing compatibility.
-- Implement and validate locally; publishing remains separately prohibited until the user says otherwise.
+- Validate locally or on the authorized Actions branch. Merging into `main`, tagging and release publication still require separate user authorization.
 
 ## Local implementation checks
+
+Current visual verification status: blocked pending rendered screenshots. Static resource checks, the bootstrap integration test, two relay-server tests, Flutter analysis, all 62 Flutter tests and all three platform builds passed in [GitHub Actions](https://github.com/resassance/nearbridge/actions/runs/39002395492). The Android APK uses the pinned permanent signing certificate. See `../design-qa.md` for scope and evidence. No release has been published.
 
 Current verification status: blocked. Static checks and the bootstrap integration test passed, but Flutter analysis, tests, native builds and visual comparison remain unverified because a usable Flutter runtime could not be initialized. See `../design-qa.md` for the exact scope and blockers. No build or release has been produced.
 

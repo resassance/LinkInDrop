@@ -1,6 +1,6 @@
 # LinkInDrop
 
-The LinkInDrop redesign is currently local and unpublished. Existing GitHub releases still use the previous Nearbridge interface and executable names. New local builds use `LinkInDrop.exe` on Windows and `LinkInDrop/LinkInDrop` in the Linux archive.
+The LinkInDrop redesign is validated on the `design/linkindrop` branch through GitHub Actions. It has not been merged into `main` or published as a release. Existing GitHub releases still use the previous Nearbridge interface and executable names. New builds use `LinkInDrop.exe` on Windows and `LinkInDrop/LinkInDrop` in the Linux archive.
 
 The redesign adds compact desktop/mobile navigation, selected-file previews with explicit confirmation, light/dark/system themes and Russian/English/system language preferences. Dropped files and Android shares are staged before transfer. Real filenames and user content are preserved.
 
