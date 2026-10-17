@@ -19,7 +19,10 @@ class MainActivity : FlutterActivity() {
         app.platform.shared()
     }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (!app.platform.folders.onActivityResult(requestCode, resultCode, data)) super.onActivityResult(requestCode, resultCode, data)
+        if (!app.platform.media.onActivityResult(requestCode, resultCode, data) && !app.platform.folders.onActivityResult(requestCode, resultCode, data)) super.onActivityResult(requestCode, resultCode, data)
+    }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        if (!app.platform.media.onPermissionsResult(requestCode)) super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
     override fun onDestroy() {
         app.platform.detach(this)

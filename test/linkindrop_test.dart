@@ -56,7 +56,9 @@ void main() {
     await tester.runAsync(() => controller.stageFiles([file.path]));
     await tester.binding.setSurfaceSize(const Size(1440, 1024));
     await tester.pumpWidget(LinkInDropApp(controller: controller, start: false));
-    await tester.tap(find.byKey(const ValueKey('theme-dark')));
+    await tester.tap(find.byKey(const ValueKey('theme-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dark'));
     await tester.pumpAndSettle();
     expect(Theme.of(tester.element(find.byType(Scaffold).first)).brightness, Brightness.dark);
     await controller.setAppearance(language: 'ru');
@@ -93,7 +95,7 @@ void main() {
     await tester.binding.setSurfaceSize(null);
   });
 
-  testWidgets('mobile header actions share a row in both languages and themes', (tester) async {
+  testWidgets('mobile theme control remains at the top right in both languages and themes', (tester) async {
     final controller = _MobileController()..loading = false;
     for (final language in ['ru', 'en']) {
       for (final theme in ['light', 'dark']) {
@@ -103,9 +105,11 @@ void main() {
           await tester.binding.setSurfaceSize(Size(width, 844));
           await tester.pumpWidget(LinkInDropApp(controller: controller, start: false));
           await tester.pumpAndSettle();
-          final title = find.text(language == 'ru' ? 'Передача' : 'Transfer').first;
-          final shortcut = find.byKey(const ValueKey('received-shortcut'));
-          expect((tester.getCenter(title).dy - tester.getCenter(shortcut).dy).abs(), lessThan(2));
+          final title = find.text('LinkInDrop');
+          final themeControl = find.byKey(const ValueKey('theme-menu'));
+          expect((tester.getCenter(title).dy - tester.getCenter(themeControl).dy).abs(), lessThan(2));
+          expect(tester.getCenter(themeControl).dx, greaterThan(width - 64));
+          expect(find.byKey(const ValueKey('send-clipboard')), findsOneWidget);
           expect(find.byType(NavigationBar), findsOneWidget);
           expect(tester.takeException(), isNull, reason: '$width $language $theme');
         }

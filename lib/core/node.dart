@@ -451,8 +451,8 @@ class BridgeNode {
     }
   }
 
-  Future<void> sendClipboard(ClipboardPayload payload) async {
-    final targets = peers.values.where((p) => p.clipboardEnabled).toList();
+  Future<void> sendClipboard(ClipboardPayload payload, {Peer? target}) async {
+    final targets = target == null ? peers.values.where((p) => p.clipboardEnabled).toList() : [target];
     if (targets.isEmpty) throw StateError(localizeMessage("Нет подключённых устройств"));
     var delivered = 0;
     await Future.wait(targets.map((peer) async {
@@ -466,7 +466,7 @@ class BridgeNode {
     onChanged();
     if (delivered == 0) throw StateError(localizeMessage("Не удалось передать буфер"));
     onActivity(Activity(localizeMessage("Буфер отправлен"),
-      localizeMessage("{0} · устройств: {1}", [payload.type == 'png' ? localizeMessage("Изображение") : localizeMessage("Текст"), delivered])));
+      localizeMessage("{0} · устройств: {1}", [payload.type == 'png' ? localizeMessage("Изображение") : localizeMessage("Текст"), delivered]), kind: 'clipboard'));
   }
 
   Future<void> sendFile(Peer peer, String path, {String? filename}) async {
@@ -500,7 +500,7 @@ class BridgeNode {
       final response = await request.close().timeout(const Duration(minutes: 2));
       await _readBounded(response, 65536);
       if (response.statusCode != 200) throw HttpException(localizeMessage("Передача отклонена ({0})", [response.statusCode]));
-      onActivity(Activity(localizeMessage("Файл отправлен"), '$name → ${peer.name}'));
+      onActivity(Activity(localizeMessage("Файл отправлен"), '$name → ${peer.name}', thumbnailPath: path, name: name, kind: 'upload'));
     } finally {
       client.close(force: true);
       _clients.remove(client);
@@ -654,7 +654,7 @@ class BridgeNode {
       final digest = meta['digest'] as String;
       if (expectedDigest != null && digest != expectedDigest) throw const FormatException('Backup checksum mismatch');
       final receipt = await received.deliver(peer.id, id, output, relative ?? entry.name, digest);
-      onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '${entry.name} · ${peer.name}', path: receipt['location'] as String));
+      onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '${entry.name} · ${peer.name}', path: receipt['location'] as String, name: (receipt['name'] as String?) ?? receipt['location'] as String, kind: 'download'));
     }
     if (meta['done'] == true && await output.exists()) { await deliverCompleted(); return; }
     if (meta['finalizing'] == true && await output.exists()) {
@@ -769,7 +769,7 @@ class BridgeNode {
       meta.remove('finalizing');
       await save();
       final receipt = await received.deliver(peer.id, id, destination, relative ?? entry.name, meta['digest'] as String);
-      onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '${entry.name} · ${peer.name}', path: receipt['location'] as String));
+      onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '${entry.name} · ${peer.name}', path: receipt['location'] as String, name: (receipt['name'] as String?) ?? receipt['location'] as String, kind: 'download'));
     } finally {
       client?.close(force: true);
       if (client != null) _clients.remove(client);
@@ -872,7 +872,7 @@ class BridgeNode {
       status = await _pairedRequest(peer, '/uploads/$id/complete', body: {});
       lastUploadReceipt = status;
       if (status['sha256'] != digest) throw const FormatException('Upload checksum mismatch');
-      onActivity(Activity(status['skipped'] == true ? localizeMessage("Файл пропущен получателем") : localizeMessage("Файл отправлен"), '$filename → ${peer.name}'));
+      onActivity(Activity(status['skipped'] == true ? localizeMessage("Файл пропущен получателем") : localizeMessage("Файл отправлен"), '$filename → ${peer.name}', name: filename, kind: 'upload'));
       return digest;
     } finally { transferName = null; transferProgress = null; onChanged(); }
   }
@@ -1134,7 +1134,7 @@ class BridgeNode {
         final completed = path == null ? await uploads.completedFile(peer.id, parts[1]) : File(path);
         final metadata = await uploads.metadata(peer.id, parts[1]);
         receipt = await received.deliver(peer.id, parts[1], completed, metadata['relative'] as String? ?? metadata['name'] as String, result['sha256'] as String);
-        onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '${receipt['name']} · ${peer.name}', path: receipt['location'] as String));
+        onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '${receipt['name']} · ${peer.name}', path: receipt['location'] as String, name: (receipt['name'] as String?) ?? receipt['location'] as String, kind: 'download'));
       }
       result['receipt'] = token;
       result['skipped'] = receipt['skipped'];
@@ -1244,7 +1244,7 @@ class BridgeNode {
       await temporary.rename(output.path);
       final digest = (await sha256.bind(output.openRead()).first).toString();
       final receipt = await this.received.deliver(peer.id, id, output, name, digest);
-      onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '$name · ${peer.name}', path: receipt['location'] as String));
+      onActivity(Activity(receipt['skipped'] == true ? localizeMessage("Файл пропущен") : localizeMessage("Файл получен"), '$name · ${peer.name}', path: receipt['location'] as String, name: (receipt['name'] as String?) ?? receipt['location'] as String, kind: 'download'));
       _respond(request, 200, {'ok': true, 'bytes': received});
     } catch (_) {
       try { await sink.close(); } catch (_) {}
