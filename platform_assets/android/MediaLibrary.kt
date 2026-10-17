@@ -11,7 +11,6 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
@@ -37,6 +36,9 @@ class MediaLibrary(private val context: Context, private val activity: () -> Act
     private val collection = MediaStore.Files.getContentUri("external")
     private val image = MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE
     private val video = MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+    private data class Entry(val id: Long, val name: String, val size: Long, val video: Boolean,
+        val duration: Long, val taken: Long, val modified: Long, val added: Long, val album: String?, val albumName: String?)
+    @Volatile private var media: List<Entry>? = null
 
     private fun access(): String {
         fun granted(name: String) = context.checkSelfPermission(name) == PackageManager.PERMISSION_GRANTED
@@ -119,37 +121,31 @@ class MediaLibrary(private val context: Context, private val activity: () -> Act
     private fun page(album: String?, offset: Int): List<Map<String, Any>> {
         require(offset in 0..1000000)
         if (access() == "denied") return emptyList()
-        val columns = arrayOf(MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME,
-            MediaStore.Files.FileColumns.SIZE, MediaStore.Files.FileColumns.MEDIA_TYPE, "duration")
-        val selection = "media_type IN (?,?)" + if (album == null) "" else " AND bucket_id = ?"
-        val args = if (album == null) arrayOf(image.toString(), video.toString()) else arrayOf(image.toString(), video.toString(), album)
-        val cursor = if (Build.VERSION.SDK_INT >= 26) resolver.query(collection, columns, Bundle().apply {
-            putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
-            putStringArray(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
-            putStringArray(android.content.ContentResolver.QUERY_ARG_SORT_COLUMNS, arrayOf(MediaStore.Files.FileColumns.DATE_ADDED, MediaStore.Files.FileColumns._ID))
-            putInt(android.content.ContentResolver.QUERY_ARG_SORT_DIRECTION, android.content.ContentResolver.QUERY_SORT_DIRECTION_DESCENDING)
-            putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, 60)
-            putInt(android.content.ContentResolver.QUERY_ARG_OFFSET, offset)
-        }, null) else resolver.query(collection, columns, selection, args, "date_added DESC, _id DESC LIMIT 60 OFFSET $offset")
-        val output = mutableListOf<Map<String, Any>>()
-        cursor?.use {
-            while (it.moveToNext() && output.size < 60) {
-                val size = it.getLong(2)
-                if (size < 0) continue
-                output.add(mapOf("uri" to ContentUris.withAppendedId(collection, it.getLong(0)).toString(),
-                    "name" to (it.getString(1) ?: "file"), "size" to size, "video" to (it.getInt(3) == video), "duration" to it.getLong(4)))
-            }
-        }
-        return output
+        return (media ?: readMedia()).asSequence().filter { album == null || it.album == album }.drop(offset).take(60).map {
+            mapOf("uri" to ContentUris.withAppendedId(collection, it.id).toString(), "name" to it.name,
+                "size" to it.size, "video" to it.video, "duration" to it.duration)
+        }.toList()
     }
 
     private fun albums(): List<Map<String, String>> {
-        if (access() == "denied") return emptyList()
+        if (access() == "denied") { media = null; return emptyList() }
         val output = linkedMapOf<String, String>()
-        resolver.query(collection, arrayOf("bucket_id", "bucket_display_name"), "media_type IN (?,?)", arrayOf(image.toString(), video.toString()), "date_added DESC")?.use {
-            while (it.moveToNext()) { val id = it.getString(0) ?: continue; output.putIfAbsent(id, it.getString(1) ?: "Photos") }
-        }
+        for (entry in readMedia()) entry.album?.let { output.putIfAbsent(it, entry.albumName ?: "Photos") }
         return output.map { mapOf("id" to it.key, "name" to it.value) }
+    }
+
+    private fun readMedia(): List<Entry> {
+        val columns = arrayOf("_id", "_display_name", "_size", "media_type", "duration", "datetaken", "date_modified", "date_added", "bucket_id", "bucket_display_name")
+        val output = mutableListOf<Entry>()
+        resolver.query(collection, columns, "media_type IN (?,?)", arrayOf(image.toString(), video.toString()), null)?.use {
+            while (it.moveToNext()) {
+                val size = it.getLong(2)
+                if (size >= 0) output.add(Entry(it.getLong(0), it.getString(1) ?: "file", size, it.getInt(3) == video,
+                    it.getLong(4), it.getLong(5), it.getLong(6), it.getLong(7), it.getString(8), it.getString(9)))
+            }
+        }
+        output.sortWith { a, b -> MediaOrder.compare(a.taken, a.modified, a.added, a.id, b.taken, b.modified, b.added, b.id) }
+        return output.also { media = it }
     }
 
     private fun thumbnail(location: String, video: Boolean): ByteArray? {

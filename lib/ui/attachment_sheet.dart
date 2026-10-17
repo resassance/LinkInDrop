@@ -27,22 +27,61 @@ class _AttachmentSheetState extends State<AttachmentSheet> with WidgetsBindingOb
   bool _working = false;
   String? _error;
   int _generation = 0;
+  bool _checkingAccess = false;
+  bool _backgrounded = false;
   BridgeController get c => widget.controller;
   @override
   void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); unawaited(_initialize(request: true)); }
   @override
   void dispose() { WidgetsBinding.instance.removeObserver(this); _generation++; super.dispose(); }
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) { if (state == AppLifecycleState.resumed && !_working && !_loading) unawaited(_initialize()); }
-  Future<void> _initialize({bool request = false}) async {
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) _backgrounded = true;
+    if (state == AppLifecycleState.resumed && !_working && !_loading) unawaited(_refreshAccess());
+  }
+  Future<void> _refreshAccess() async {
+    if (_checkingAccess || _working || _loading || _access == 'loading' || WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) return;
+    _checkingAccess = true;
+    var checked = false;
+    try {
+      final access = await widget.library.access();
+      if (!mounted || WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) return;
+      checked = true;
+      if (mounted && (access != _access || _backgrounded)) {
+        _backgrounded = false;
+        await _initialize(preservePosition: true);
+      }
+    } catch (_) {
+    } finally { _checkingAccess = false; if (checked) _refreshWhenReady(); }
+  }
+  void _refreshWhenReady() {
+    if (mounted && _backgrounded && !_working && !_loading && WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) unawaited(_refreshAccess());
+  }
+  Future<void> _initialize({bool request = false, bool preservePosition = false}) async {
     final generation = ++_generation;
+    final count = _items.length;
+    if (preservePosition) setState(() => _loading = true);
     try {
       final access = await widget.library.access(request: request);
       final albums = access == 'denied' ? <Map<String, String>>[] : await widget.library.albums();
       if (!mounted || generation != _generation) return;
-      setState(() { _access = access; _albums = albums; _items.clear(); _album = null; _more = true; _loading = false; _error = null; });
+      if (preservePosition && access != 'denied') {
+        final album = albums.any((entry) => entry['id'] == _album) ? _album : null;
+        final items = <LibraryItem>[];
+        var more = true;
+        while (more && (items.isEmpty || items.length < count)) {
+          final page = await widget.library.page(album: album, offset: items.length);
+          if (!mounted || generation != _generation) return;
+          items.addAll(page);
+          more = page.length == 60;
+        }
+        setState(() { _access = access; _albums = albums; _album = album; _items..clear()..addAll(items); _more = more; _loading = false; _error = null; });
+        return;
+      }
+      setState(() { _access = access; _albums = albums; _items.clear(); if (!albums.any((album) => album['id'] == _album)) _album = null; _more = true; _loading = false; _error = null; });
       if (access != 'denied') await _load();
-    } catch (error) { if (mounted && generation == _generation) setState(() { _access = 'denied'; _error = '$error'; }); }
+    } catch (error) { if (mounted && generation == _generation) setState(() { if (!preservePosition) _access = 'denied'; _loading = false; _error = '$error'; }); }
+    finally { if (mounted && generation == _generation) { setState(() => _loading = false); _refreshWhenReady(); } }
   }
   Future<void> _load() async {
     if (_loading || !_more) return;
@@ -52,14 +91,19 @@ class _AttachmentSheetState extends State<AttachmentSheet> with WidgetsBindingOb
       final page = await widget.library.page(album: _album, offset: _items.length);
       if (mounted && generation == _generation) setState(() { _items.addAll(page); _more = page.length == 60; _error = null; });
     } catch (error) { if (mounted && generation == _generation) setState(() => _error = '$error'); }
-    finally { if (mounted && generation == _generation) setState(() => _loading = false); }
+    finally { if (mounted && generation == _generation) { setState(() => _loading = false); _refreshWhenReady(); } }
   }
   Future<void> _operation(Future<void> Function() action) async {
     if (_working || c.busy) return;
     setState(() { _working = true; _error = null; });
     try { await action(); }
     catch (error) { if (mounted) setState(() => _error = '$error'); }
-    finally { if (mounted) setState(() => _working = false); }
+    finally {
+      if (mounted) {
+        setState(() => _working = false);
+        _refreshWhenReady();
+      }
+    }
   }
   Future<void> _select(LibraryItem item) => _operation(() async {
     final existing = c.gallerySources[item.uri];
@@ -88,10 +132,10 @@ class _AttachmentSheetState extends State<AttachmentSheet> with WidgetsBindingOb
     return NotificationListener<ScrollNotification>(onNotification: (notice) {
       if (notice.metrics.extentAfter < 500 && _more && !_loading && _error == null) unawaited(_load());
       return false;
-    }, child: CustomScrollView(controller: scroll, slivers: [
+    }, child: CustomScrollView(key: const PageStorageKey('attachment-gallery'), controller: scroll, slivers: [
       SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 12), child: Column(children: [
         Row(children: [Expanded(child: ChoiceField<String>(showLabel: false, label: tr(context, 'Альбом'), value: _album ?? '', options: {'': tr(context, 'Недавние'), for (final album in _albums) album['id']!: album['name']!},
-          onChanged: _loading || _working ? null : (value) { _generation++; setState(() { _album = value.isEmpty ? null : value; _items.clear(); _more = true; _loading = false; }); unawaited(_load()); })), const SizedBox(width: 12), Text(tr(context, 'Выбрано: {0}', [c.selection.items.length]), style: TextStyle(color: Theme.of(context).colorScheme.primary))]),
+          onChanged: _loading || _working ? null : (value) { if (value == (_album ?? '')) return; _generation++; setState(() { _album = value.isEmpty ? null : value; _items.clear(); _more = true; _loading = false; _error = null; }); if (scroll.hasClients) scroll.jumpTo(0); unawaited(_load()); })), const SizedBox(width: 12), Text(tr(context, 'Выбрано: {0}', [c.selection.items.length]), style: TextStyle(color: Theme.of(context).colorScheme.primary))]),
         if (_access == 'limited') Padding(padding: const EdgeInsets.only(top: 8), child: TextButton(onPressed: () => _initialize(request: true), child: Text(tr(context, 'Доступ только к выбранным фото · Изменить')))),
       ]))),
       if (_items.isEmpty && !_loading) SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.all(24), child: Text(tr(context, 'В этом альбоме нет доступных фото и видео')))),
@@ -134,7 +178,7 @@ class _AttachmentSheetState extends State<AttachmentSheet> with WidgetsBindingOb
       ])), IconButton(tooltip: tr(context, 'Закрыть'), onPressed: _working ? null : () => Navigator.pop(context, false), icon: const Icon(Icons.close_rounded))])),
       if (_working) Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Column(children: [const LinearProgressIndicator(), const SizedBox(height: 8), Text(tr(context, 'Подготавливаем файлы…'))])),
       if (_error != null) Padding(padding: const EdgeInsets.all(16), child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
-      Expanded(child: _tab == 0 ? _gallery(scroll) : _files(scroll)),
+      Expanded(key: const ValueKey('attachment-content'), child: _tab == 0 ? _gallery(scroll) : _files(scroll)),
       if (c.selection.items.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('${c.selection.items.length} · ${stringsOf(context).size(c.selection.totalBytes)}${c.selection.hasDirectories ? tr(context, ' + папки') : ''}'), const SizedBox(height: 8),
         FilledButton(key: const ValueKey('attachments-next'), onPressed: _working ? null : () => Navigator.pop(context, true), child: Text(tr(context, 'Далее · {0}', [c.selection.items.length]))),

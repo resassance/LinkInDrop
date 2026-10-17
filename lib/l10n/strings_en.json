@@ -417,5 +417,6 @@
   "нужно снять ограничения": "restrictions need to be removed",
   "остановлена": "stopped",
   "работает": "running",
-  "разрешены": "allowed"
+  "разрешены": "allowed",
+  "Фото сохраняются в папке получения с исходными именами и подпапками: DCIM/Camera/photo.jpg. Оригиналы остаются на устройстве; уже скопированные файлы по тому же пути повторно не отправляются.": "Photos keep their original names and folders inside the receive folder: DCIM/Camera/photo.jpg. Originals stay on the source device; files already backed up at the same path are not sent again."
 }

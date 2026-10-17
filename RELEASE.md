@@ -1,26 +1,28 @@
-# LinkInDrop 0.3.0-alpha.4
+# LinkInDrop 1.0.0
 
-## Русский
+Первый полноценный выпуск LinkInDrop для Android, Windows и Linux.
 
-Новый дизайн для ПК и телефона, предпросмотр файлов перед отправкой, светлая и тёмная темы, русский и английский интерфейс с выбором языка системы.
+## Что изменилось
 
-- Полное переименование приложения, Android ID, кодов подключения, сетевого протокола и файлов сборки.
-- Папки и файлы на привязанных устройствах, очередь передач, фотобэкап и работа в фоне сохранены.
-- Настройки находятся внизу навигации на ПК; кнопка полученных файлов выровнена с заголовком передачи на телефоне.
-- README на двух языках: оглавление, технологии, установка, NekoBox и инструкции по сборке.
+- Галерея сохраняет позицию прокрутки и выбранные фото. Выбор снимка и открытие списка альбомов больше не сбрасывают окно наверх.
+- «Недавние» показывают сначала новые фото и видео.
+- Фотобэкап сохраняет исходные имена и подпапки: выбранная `DCIM` копируется как `DCIM/Camera/…`, `DCIM/Screenshots/…` и далее по дереву. Одинаковые фото в разных подпапках остаются на своих местах.
+- Обновлён интерфейс ПК и Android: единые кнопки и отступы, заметные основные действия, подсказки и настройки без раскрывающихся секций.
+- На Android доступна панель вложений с галереей, альбомами, выбором файлов и папок и предпросмотром перед отправкой.
+- Редактор текста и мгновенная отправка буфера вынесены на экран передачи. Папку сохранения можно менять в разделе «Полученные».
+- Добавлены миниатюры последних передач и обновлён значок приложения.
+- Английская и русская документация находятся в отдельных README со ссылками для переключения языка.
 
-### Установка
+## Установка
 
-Это отдельное приложение с ID `dev.resassance.linkindrop` и протоколом версии 2. Установите новый APK и новые сборки на все устройства, затем заново выполните привязку. Старые версии несовместимы. Сохраните полученные файлы перед удалением прежней установки; внутренние данные автоматически не переносятся. Одновременный запуск старой и новой версий может занять те же сетевые порты, поэтому закройте прежнее приложение.
+**Android:** установите APK поверх текущего LinkInDrop без удаления приложения. Настройки и привязанные устройства сохранятся.
 
-Для NekoBox разрешите LAN или исключите `dev.resassance.linkindrop` из VPN. Android может запрещать обход VPN даже при выбранном прямом Wi-Fi. Для передачи в фоне включите службу и необходимые разрешения.
+**Windows x64:** распакуйте ZIP целиком и запустите `LinkInDrop.exe`. **Linux x64:** распакуйте TAR.GZ и запустите `LinkInDrop/LinkInDrop`.
 
-Windows: распакуйте ZIP целиком и запустите `LinkInDrop.exe`. Linux: запустите `LinkInDrop/LinkInDrop`; нужны GTK 3 и AppIndicator. APK подписан постоянным ключом проекта. Для каждого пакета приложен SHA-256.
+Прежние фотобэкапы остаются на своих местах. При следующем копировании фото также появятся в исходном дереве папок; существующие файлы не удаляются.
 
-## English
+---
 
-New desktop/mobile design, selected-file previews, persistent light/dark/system themes and Russian/English/system language preferences. The project, application identifiers, pairing scheme, protocol and package names now use LinkInDrop throughout.
+First full release for Android, Windows and Linux. The gallery keeps its scroll position and selected album, recent media appears newest first, and photo backups retain their original names and folder tree. Includes the refreshed interface, Android attachment gallery, media previews, separate text and clipboard actions, and linked English/Russian READMEs.
 
-This release uses a separate Android application ID, `dev.resassance.linkindrop`, and protocol version 2. Install it on every device and pair again. Old versions cannot connect. Private data is not migrated automatically; save received files before removing a previous installation. Close the previous app to avoid competing for the same network ports.
-
-Windows, Linux and Android packages include SHA-256 checksums. APK signing is verified against the permanent project certificate. Native background behavior and VPN restrictions still depend on device settings. Visual comparison with the approved design remains pending; this is an alpha release.
+Install the Android APK over your existing LinkInDrop. On Windows, extract the full ZIP and run `LinkInDrop.exe`; on Linux, extract the TAR.GZ and run `LinkInDrop/LinkInDrop`. Existing photo backups stay in place; the next backup also creates copies in the original folder tree.
