@@ -1,11 +1,13 @@
+**[Русская версия](README.ru.md)**
+
 <p align="center"><img src="assets/icons/brand.png" width="96" height="96" alt="LinkInDrop logo"></p>
 <h1 align="center">LinkInDrop</h1>
 <p align="center">Files, folders and clipboard. Across your devices.</p>
-<p align="center"><a href="README.md">English</a> · <a href="README.ru.md">Русский</a> · <a href="https://github.com/resassance/LinkInDrop/releases">Downloads</a></p>
+<p align="center"><a href="https://github.com/resassance/LinkInDrop/releases">Downloads</a></p>
 
 <p align="center">
   <a href="https://github.com/resassance/LinkInDrop/actions/workflows/build.yml"><img src="https://github.com/resassance/LinkInDrop/actions/workflows/build.yml/badge.svg?branch=main" alt="Build status"></a>
-  <a href="https://github.com/resassance/LinkInDrop/releases"><img src="https://img.shields.io/github/v/release/resassance/LinkInDrop?include_prereleases&label=preview&color=2457ff" alt="Latest preview"></a>
+  <a href="https://github.com/resassance/LinkInDrop/releases"><img src="https://img.shields.io/github/v/release/resassance/LinkInDrop?label=release&color=2457ff" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-64748b" alt="MIT license"></a>
 </p>
 <p align="center">
@@ -17,7 +19,7 @@
 
 LinkInDrop connects Android, Windows and Linux devices for file transfers and a shared clipboard. Pair once, select a recipient, review your files and send. Connect over your local network, a private VPN linking your devices, or an optional self-hosted relay for remote access.
 
-**Preview software.** Version `0.3.0-alpha.4` introduces a new application ID and pairing protocol. Install it on every device and pair them again. Previous installations and their private data are separate; save received files before removing an old installation. Keep both devices running for transfers and remote browsing.
+**Version 1.0.0.** Install the current version on each device. You can update an existing LinkInDrop installation without removing it; saved settings and paired devices are kept. Both devices must be running for transfers and remote browsing.
 
 ## Contents
 
@@ -41,7 +43,7 @@ LinkInDrop connects Android, Windows and Linux devices for file transfers and a 
 | Shared clipboard | Send text and images. Automatic exchange is optional and configurable. |
 | Transfer queue | Pause, resume, retry and prioritize transfers. Show progress, speed and estimated time; resume verified blocks. |
 | Received files | Open the destination quickly and optionally sort loose files into type-based folders. Transferred folder trees stay intact. |
-| Photo backup | Copy new photos from selected folders, verify copies and restore them. Backup can be disabled; originals stay on the source device. |
+| Photo backup | Copy photos with their original names and folder tree, including separate copies at different paths. Originals stay on the source device. |
 | Background operation | Use the desktop tray or enable Android's foreground service, battery exemption and optional boot recovery. |
 | Appearance | Compact desktop/mobile navigation, light/dark/system themes and Russian/English/system language preferences. |
 
@@ -55,7 +57,7 @@ Get packages and SHA-256 checksums from [Releases](https://github.com/resassance
 | Linux x64 | `linkindrop-*-linux-x64.tar.gz` | Extract and run `LinkInDrop/LinkInDrop`. Requires GTK 3 and an AppIndicator-compatible desktop session. |
 | Android 6+ | `linkindrop-*-android.apk` | Install the APK. Allow installation from the app used to download it. |
 
-On Debian/Ubuntu, Linux runtime dependencies include `libgtk-3-0` and `libayatana-appindicator3-1`; package names vary by distribution. Official APK signatures are checked against the project's permanent signing certificate before publication.
+On Debian/Ubuntu, Linux runtime dependencies include `libgtk-3-0` and `libayatana-appindicator3-1`; package names vary by distribution. Official APKs use the permanent project signing key, so they can be installed over earlier LinkInDrop versions.
 
 ## Connect and transfer
 
@@ -66,6 +68,12 @@ On Debian/Ubuntu, Linux runtime dependencies include `libgtk-3-0` and `libayatan
 5. For browsing, enable sharing on the source device and choose the files or folders to expose. Open **Device files** from the other device.
 
 On Windows, use **Allow local connections** if needed. Administrator approval creates application-specific inbound firewall rules for the local subnet. Default ports are TCP `45831` and UDP `45832`; the actual listening port can differ. Guest Wi-Fi and client isolation may prevent connections.
+
+### Photo backup
+
+Select a source folder and a destination device in Settings, then enable automatic photo backup. Selecting `DCIM` saves photos as `DCIM/Camera/photo.jpg`, `DCIM/Screenshots/screenshot.png`, and so on inside the destination’s receive folder. Names and subfolders stay intact; unchanged files at the same path are not copied again. Files outside the supported photo formats are not included.
+
+Backups made by earlier versions remain in their existing folders. The next backup also creates copies in the original folder tree; it does not remove or move existing files.
 
 ## Remote access and VPN
 

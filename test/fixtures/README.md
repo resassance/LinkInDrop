@@ -1,0 +1,1 @@
+`coast.jpg` is the fixture from Flutter's `examples/image_list/images/coast.jpg`, distributed under Flutter's BSD 3-Clause license: https://github.com/flutter/flutter/blob/3.32.8/LICENSE. It is used only in widget tests and screenshot fixtures.

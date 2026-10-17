@@ -26,7 +26,7 @@ jobs:
       - run: npm install --prefix relay_server
       - run: npm test --prefix relay_server
       - run: python tool/check_design.py
-      - run: python -m unittest tool/bootstrap_test.py tool/signing_test.py
+      - run: python -m unittest tool/bootstrap_test.py tool/signing_test.py tool/media_order_test.py
       - run: flutter pub get
       - run: dart format lib test
       - run: flutter analyze --no-fatal-infos

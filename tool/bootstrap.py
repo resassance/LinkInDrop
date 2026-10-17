@@ -14,8 +14,11 @@ target = root / "android" / "app" / "src" / "main"
 shutil.copyfile(assets / "AndroidManifest.xml", target / "AndroidManifest.xml")
 kotlin = target / "kotlin" / "dev" / "resassance" / "linkindrop"
 kotlin.mkdir(parents=True, exist_ok=True)
-for name in ["MainActivity.kt", "ConnectionService.kt", "ClipboardTile.kt", "FolderAccess.kt", "BridgeApplication.kt", "PlatformBridge.kt", "BootReceiver.kt", "ReceiveFiles.kt", "LocalNetwork.kt", "ReceivedDocumentsProvider.kt", "NativeStrings.kt"]:
+for name in ["MainActivity.kt", "MediaLibrary.kt", "ConnectionService.kt", "ClipboardTile.kt", "FolderAccess.kt", "BridgeApplication.kt", "PlatformBridge.kt", "BootReceiver.kt", "ReceiveFiles.kt", "LocalNetwork.kt", "ReceivedDocumentsProvider.kt", "NativeStrings.kt"]:
     shutil.copyfile(assets / name, kotlin / name)
+java = target / "java" / "dev" / "resassance" / "linkindrop"
+java.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(assets / "MediaOrder.java", java / "MediaOrder.java")
 drawable = target / "res" / "drawable"
 drawable.mkdir(parents=True, exist_ok=True)
 shutil.copytree(assets / "res", target / "res", dirs_exist_ok=True)

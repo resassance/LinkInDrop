@@ -22,15 +22,17 @@ class PlatformBridge(private val context: Context, engine: FlutterEngine) {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newFixedThreadPool(2)
     val folders = FolderAccess(context) { activity }
+    val media = MediaLibrary(context) { activity }
     private val received = ReceiveFiles(context)
     private val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "linkindrop/system")
     private fun resolverType(uri: Uri): String = context.contentResolver.getType(uri) ?: "application/octet-stream"
     fun attach(value: MainActivity) { activity = value }
-    fun detach(value: MainActivity) { if (activity === value) activity = null }
+    fun detach(value: MainActivity) { if (activity === value) { media.detach(); activity = null } }
     fun shared() { channel.invokeMethod("shared", null) }
     private val localNetwork = LocalNetwork(context) { channel.invokeMethod("localNetworkChanged", null) }
     init {
         channel.setMethodCallHandler { call, result ->
+            if (media.handle(call, result)) return@setMethodCallHandler
             if (folders.handle(call, result)) return@setMethodCallHandler
             try {
                 when (call.method) {

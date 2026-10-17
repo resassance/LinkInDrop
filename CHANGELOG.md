@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0
+
+- Keep the Android gallery scroll position and selected album while choosing photos.
+- Show recent photos and videos newest first with stable pagination.
+- Preserve original photo names and the selected source folder tree in automatic backups.
+- Keep separate copies of identical photos in different source folders.
+- Refresh desktop and Android controls, spacing, navigation, settings, dropdowns and the app icon.
+- Add the Android attachment gallery, album selection and media previews.
+- Separate text editing from instant clipboard sending and expose the receive-folder picker on Received.
+- Add recent media thumbnails and fix Android receive-folder paths.
+- Link separate English and Russian READMEs from the top of each file.
+
 ## 0.3.0-alpha.4
 
 - Introduce the LinkInDrop desktop/mobile design with selected-file previews and explicit send confirmation.

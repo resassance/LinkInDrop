@@ -107,7 +107,9 @@ void main() {
     expect(find.text('Перетащите сюда файлы или папки'), findsOneWidget);
     expect(find.text('Ваши устройства.\nОдин буфер.'), findsNothing);
     expect(find.text('Автоматически копировать новые фото'), findsNothing);
-    await tester.tap(find.text('Полученные файлы'));
+    await tester.tap(find.byKey(const ValueKey('nav-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('received-shortcut')));
     await tester.pumpAndSettle();
     expect(controller.opened, 1);
     expect(tester.takeException(), isNull);

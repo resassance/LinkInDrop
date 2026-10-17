@@ -38,7 +38,7 @@ void main() {
     } finally { await second?.close(); await root.delete(recursive: true); }
   });
 
-  test('photo backup deduplicates content and records only acknowledged copies', () async {
+  test('photo backup keeps distinct paths and records only acknowledged copies', () async {
     final root = await Directory.systemTemp.createTemp('linkindrop-backup-');
     final queued = <TransferJob>[];
     final private = await Directory('${root.path}/private').create();
@@ -55,12 +55,12 @@ void main() {
       await File('${photos.path}/notes.txt').writeAsString('not-photo');
       backup.peerId = 'peer'; backup.enabled = true;
       await backup.scan();
-      expect(queued.length, 2);
+      expect(queued.length, 3);
       expect(backup.copied, 0);
       await backup.completed(queued.first);
       expect(backup.copied, 1);
       await backup.scan();
-      expect(queued.length, 2);
+      expect(queued.length, 3);
       expect(await File('${photos.path}/one.jpg').exists(), isTrue);
       expect(await File('${photos.path}/copy.jpg').exists(), isTrue);
       final unavailable = await Directory('${root.path}/Unavailable').create();
@@ -69,11 +69,11 @@ void main() {
       await File('${photos.path}/late.jpg').writeAsString('new-photo');
       await backup.scan();
       expect(backup.lastError, isNotNull);
-      expect(queued.length, 2);
+      expect(queued.length, 3);
       await unavailable.create();
       await backup.scan();
       expect(backup.lastError, isNull);
-      expect(queued.length, 3);
+      expect(queued.length, 4);
     } finally { await backup.close(); await root.delete(recursive: true); }
   });
 }
