@@ -22,6 +22,8 @@ import 'access_rules.dart';
 import 'release_info.dart';
 import 'receive_storage.dart';
 import 'send_selection.dart';
+import 'media_library.dart';
+import 'file_preview.dart';
 
 class BridgeController extends ChangeNotifier {
   BridgeController({ClipboardAdapter? clipboard}) : clipboard = clipboard ?? ClipboardAdapter() {
@@ -29,6 +31,7 @@ class BridgeController extends ChangeNotifier {
   }
   final ClipboardAdapter clipboard;
   final selection = SendSelection();
+  final Map<String, String> gallerySources = {};
   String themePreference = 'system';
   String languagePreference = 'system';
   final List<Activity> activities = [];
@@ -93,6 +96,7 @@ class BridgeController extends ChangeNotifier {
   }
 
   void record(Activity activity) {
+    if (activity.kind == 'upload' && queue?.active != null) return;
     activities.insert(0, activity);
     if (activities.length > 40) activities.removeLast();
     notifyListeners();
@@ -139,7 +143,7 @@ class BridgeController extends ChangeNotifier {
       await node!.start(destination: receiveDestination, conflictPolicy: conflictPolicy, sortReceived: sortReceived);
       if (relayAddress != null) unawaited(node!.configureRelay(relayAddress));
       queue = TransferQueue(directory: directory!, execute: _executeJob,
-        interrupt: () => node?.cancelTransfer(), completed: (job) async { await backup?.completed(job); await _cleanShared(job); },
+        interrupt: () => node?.cancelTransfer(), completed: (job) async { await backup?.completed(job); await _rememberTransfer(job); await _cleanShared(job); },
         discard: (job) async {
           await node?.discardDownload(job.id);
           backup?.cancelled(job);
@@ -240,8 +244,12 @@ class BridgeController extends ChangeNotifier {
   Future<void> removeSelected(SelectedSource source) async {
     if (selection.sending) return;
     selection.remove(source);
+    gallerySources.removeWhere((uri, path) => path == source.path);
     pendingFiles.remove(source.path);
-    await _cleanSharedSource(source.path);
+    if (source.directory && directory != null && p.isWithin(p.join(directory!.path, 'shared'), source.path)) {
+      final folder = Directory(source.path);
+      if (await folder.exists()) await folder.delete(recursive: true);
+    } else { await _cleanSharedSource(source.path); }
     notifyListeners();
   }
 
@@ -252,6 +260,7 @@ class BridgeController extends ChangeNotifier {
       await enqueuePaths(peer, items.map((item) => item.path).toList(),
         names: {for (final item in items) item.path: item.name});
       pendingFiles.removeWhere((path) => items.any((item) => item.path == path));
+      gallerySources.removeWhere((uri, path) => items.any((item) => item.path == path));
     });
   }
 
@@ -372,7 +381,9 @@ class BridgeController extends ChangeNotifier {
     }
     final payload = await clipboard.read();
     if (payload == null) throw StateError(localizeMessage("В буфере нет текста или изображения"));
-    await node!.sendClipboard(payload);
+    final peer = selectedPeer;
+    if (peer == null) throw StateError(localizeMessage('Выберите устройство'));
+    await node!.sendClipboard(payload, target: peer);
     _lastDigest = payload.digest;
   });
 
@@ -386,14 +397,49 @@ class BridgeController extends ChangeNotifier {
     if (text.trim().isEmpty) throw StateError(localizeMessage("Введите текст"));
     final data = Uint8List.fromList(utf8.encode(text));
     if (data.length > maxTextBytes) throw StateError(localizeMessage("Текст больше 256 КБ"));
+    final peer = selectedPeer;
+    if (peer == null) throw StateError(localizeMessage('Выберите устройство'));
     await node!.sendClipboard(ClipboardPayload(id: randomToken(16), type: 'text',
-      data: data, createdAt: DateTime.now()));
+      data: data, createdAt: DateTime.now()), target: peer);
   }
 
   Future<void> sendFile(String path, {String? name}) async {
     final peer = selectedPeer;
     if (peer == null) throw StateError(localizeMessage("Выберите устройство"));
     await enqueuePaths(peer, [path], names: name == null ? null : {path: name});
+  }
+
+  Future<void> _rememberTransfer(TransferJob job) async {
+    if (job.kind != 'upload' && job.kind != 'backup') return;
+    String? thumbnail;
+    if (job.source != null) {
+      try {
+        Uint8List? bytes;
+        if (isAndroid || RegExp(r'\.(mp4|mov|mkv|webm|m4v|3gp|avi)$', caseSensitive: false).hasMatch(job.name)) {
+          bytes = await MediaLibrary.thumbnail(job.source!, video: !RegExp(r'\.(png|jpe?g|webp|gif)$', caseSensitive: false).hasMatch(job.name));
+        } else if (RegExp(r'\.(png|jpe?g|webp|gif)$', caseSensitive: false).hasMatch(job.name) && await File(job.source!).length() <= 8 * 1024 * 1024) {
+          final preview = await compute(FilePreview.thumbnail, await File(job.source!).readAsBytes());
+          if (preview['data'] != null) bytes = base64.decode(preview['data'] as String);
+        }
+        if (bytes != null) {
+          final folder = await Directory(p.join(directory!.path, 'activity-thumbnails')).create(recursive: true);
+          final target = File(p.join(folder.path, '${job.id}.jpg'));
+          await target.writeAsBytes(bytes);
+          thumbnail = target.path;
+          final files = await folder.list().where((file) => file is File).cast<File>().toList();
+          if (files.length > 40) {
+            files.sort((a, b) => a.lastModifiedSync().compareTo(b.lastModifiedSync()));
+            for (final file in files.take(files.length - 40)) { await file.delete(); }
+          }
+        }
+      } catch (_) {}
+    }
+    final activity = Activity(localizeMessage(job.skipped ? 'Файл пропущен получателем' : 'Файл отправлен'),
+      '${localizeMessage('На {0}', [node?.peers[job.peerId]?.name ?? job.peerId])} · ${job.name}',
+      name: job.name, thumbnailPath: thumbnail, kind: 'upload');
+    activities.insert(0, activity);
+    if (activities.length > 40) activities.removeLast();
+    notifyListeners();
   }
 
   Future<void> _cleanShared(TransferJob job) async {
@@ -577,6 +623,9 @@ class BridgeController extends ChangeNotifier {
       final probe = File(p.join(root, '.linkindrop-${randomToken(8)}'));
       try { await probe.writeAsString('', flush: true); } finally { if (await probe.exists()) await probe.delete(); }
       destination = root;
+    }
+    if (destination != receiveDestination && (node?.hasActiveTransfers == true || queue?.active != null)) {
+      throw StateError(localizeMessage('Сначала приостановите текущую передачу'));
     }
     final previous = receiveDestination;
     if (isAndroid && destination != previous && destination?.startsWith('content://') == true) await const AndroidFolders().retain(destination!);

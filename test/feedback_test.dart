@@ -194,7 +194,7 @@ void main() {
       await tester.pump();
       expect(scroll.pixels, closeTo(offset, 0.1));
       expect(scroll.maxScrollExtent, closeTo(extent, 0.1));
-      expect(tester.widget<ButtonStyleButton>(find.ancestor(of: find.text('Файлы устройства'), matching: find.byWidgetPredicate((widget) => widget is ButtonStyleButton))).onPressed, isNotNull);
+      expect(tester.widget<ButtonStyleButton>(find.ancestor(of: find.text('Открыть файлы Очень длинное имя телефона и компьютера'), matching: find.byWidgetPredicate((widget) => widget is ButtonStyleButton))).onPressed, isNotNull);
       controller.busy = false; controller.changed();
       await tester.pump();
       if (width < 700) {
@@ -203,16 +203,16 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('nav-3')));
       }
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Фоновая работа и фотобэкап'));
-      await tester.tap(find.text('Фоновая работа и фотобэкап'));
+      expect(find.byType(ExpansionTile), findsNothing);
+      await tester.ensureVisible(find.text('Резервное копирование фото'));
       await tester.pumpAndSettle();
       controller.backup!.enabled = true; controller.changed();
       await tester.pump();
       final toggle = tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, 'Автоматически копировать новые фото'));
       expect(toggle.onChanged, isNotNull);
       controller.backup!.enabled = false;
-      await tester.ensureVisible(find.text('Фоновая работа и фотобэкап'));
-      await tester.tap(find.text('Фоновая работа и фотобэкап'));
+      expect(find.byType(ExpansionTile), findsNothing);
+      await tester.ensureVisible(find.text('Резервное копирование фото'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: 'width $width');
       controller.busy = false;
@@ -220,8 +220,6 @@ void main() {
         await tester.tap(find.byType(NavigationDestination).at(2));
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('Мои файлы и папки'));
-        await tester.tap(find.text('Мои файлы и папки'));
-        await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('Выбрать файлы и папки'));
         await tester.tap(find.text('Выбрать файлы и папки'));
         await tester.pumpAndSettle();

@@ -11,7 +11,8 @@ class SelectedSource {
   final String name;
   final int size;
   final bool directory;
-  bool get image => !directory && RegExp(r'\.(png|jpe?g|webp|gif)$', caseSensitive: false).hasMatch(name);
+  bool get video => !directory && RegExp(r'\.(mp4|mov|mkv|webm|m4v|3gp|avi)$', caseSensitive: false).hasMatch(name);
+  bool get image => !directory && RegExp(r'\.(png|jpe?g|webp|gif|heic|heif)$', caseSensitive: false).hasMatch(name);
 }
 
 class SendSelection extends ChangeNotifier {

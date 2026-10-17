@@ -19,6 +19,13 @@ import 'reliability_panel.dart';
 import '../core/send_selection.dart';
 import '../l10n/app_strings.dart';
 import 'app_theme.dart';
+import 'design_system.dart';
+import 'text_compose_dialog.dart';
+import 'attachment_sheet.dart';
+import 'media_composer.dart';
+import 'media_thumbnail.dart';
+import 'receive_destination.dart';
+import '../core/media_library.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 class LinkInDropApp extends StatelessWidget {
@@ -109,9 +116,8 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
             SizedBox(height: 18),
             Text(tr(context, "Откройте LinkInDrop на другом устройстве и отсканируйте код. Используйте общую сеть или настроенный ретранслятор."),
               style: TextStyle(color: subdued)),
-            if (addresses.length > 1) DropdownButton<String>(value: host, isExpanded: true,
-              items: addresses.map((ip) => DropdownMenuItem(value: ip, child: Text(ip))).toList(),
-              onChanged: (value) => setDialogState(() => host = value!)),
+            if (addresses.length > 1) ChoiceField<String>(label: tr(context, 'IPv4 / DNS'), value: host, options: {for (final ip in addresses) ip: ip},
+              onChanged: (value) => setDialogState(() => host = value)),
             SizedBox(height: 8),
             SelectableText('$host:${node.port}', style: TextStyle(color: subdued)),
             Text(tr(context, "Выберите адрес сети, доступной второму устройству. Для подключения на расстоянии используйте адрес общей VPN-сети."),
@@ -146,10 +152,16 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   }
 
   Future<void> _sendFiles() async {
-    final files = await openFiles();
-    if (!mounted || files.isEmpty) return;
-    await c.run(() => c.stageFiles(files.map((file) => file.path).toList(),
-      names: {for (final file in files) file.path: file.name}));
+    if (c.isAndroid) {
+      final uris = await AndroidFolders().pickFiles();
+      if (uris.isEmpty) return;
+      final paths = await const MediaLibrary().importItems(uris);
+      await c.stageFiles(paths);
+    } else {
+      final files = await openFiles();
+      if (!mounted || files.isEmpty) return;
+      await c.run(() => c.stageFiles(files.map((file) => file.path).toList(), names: {for (final file in files) file.path: file.name}));
+    }
   }
 
   Future<void> _remoteAddress(Peer peer) async {
@@ -292,13 +304,10 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
             value: selected.contains(peer.id), onChanged: (value) => update(() {
               if (value == true) selected.add(peer.id); else selected.remove(peer.id);
             })),
-          DropdownButton<String>(value: duration, isExpanded: true, items: [
-            if (old.expiresAt != null) DropdownMenuItem(value: 'keep', child: Text(tr(context, "Не менять срок"))),
-            DropdownMenuItem(value: 'never', child: Text(tr(context, "Бессрочно"))),
-            DropdownMenuItem(value: '15', child: Text(tr(context, "На 15 минут"))),
-            DropdownMenuItem(value: '60', child: Text(tr(context, "На час"))),
-            DropdownMenuItem(value: '1440', child: Text(tr(context, "На сутки"))),
-          ], onChanged: (value) => update(() => duration = value!)),
+          ChoiceField<String>(label: tr(context, 'Срок доступа'), value: duration, options: {
+            if (old.expiresAt != null) 'keep': tr(context, 'Не менять срок'), 'never': tr(context, 'Бессрочно'),
+            '15': tr(context, 'На 15 минут'), '60': tr(context, 'На час'), '1440': tr(context, 'На сутки')},
+            onChanged: (value) => update(() => duration = value)),
         ]))), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: Text(tr(context, "Отмена"))),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(tr(context, "Сохранить")))])));
     if (saved == true) await c.run(() => c.setShareAccess(entry.id, all ? null : selected,
@@ -351,7 +360,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           Expanded(child: Text(job.name, maxLines: 2, overflow: TextOverflow.ellipsis))]),
         SizedBox(height: 6),
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('${job.backupPaused ? tr(context, "Фотобэкап выключен") : job.state == 'completed' && job.skipped ? tr(context, "Пропущено") : labels[job.state] ?? job.state}${job.state == 'running' ? ' · ${(job.progress * 100).round()}%' : ''}', style: TextStyle(color: subdued)),
+          Text('${job.backupPaused ? tr(context, "Фотобэкап выключен") : job.state == 'completed' && job.skipped ? tr(context, "Пропущено") : labels[job.state] ?? job.state}${job.state == 'running' ? ' · ${(job.progress * 100).round()}%' : ''}', style: TextStyle(color: job.state == 'completed' ? successColor(context) : job.state == 'failed' ? Theme.of(context).colorScheme.error : job.state == 'paused' ? warningColor(context) : subdued)),
           if (job.error != null) Text(job.error!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: Theme.of(context).colorScheme.error)),
           if (job.state == 'running') ...[
             Text(tr(context, "{0} / {1} · {2}/с{3}", [_fileSize(job.doneBytes), _fileSize(job.totalBytes), _fileSize(job.bytesPerSecond.round()), job.remainingSeconds == null ? '' : tr(context, " · осталось {0}", [_remaining(job.remainingSeconds!)])])),
@@ -379,7 +388,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     final backup = c.backup;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       if (c.isAndroid) BackgroundSettings(controller: c),
-      Text(tr(context, "Фоновая работа и подключение"), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+      if (!c.isAndroid) SectionHeading(tr(context, 'Фоновая работа')),
       if (Platform.isWindows || Platform.isLinux) ...[
         SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(tr(context, "Сворачивать в трей при закрытии")),
           value: c.closeToTray, onChanged: (value) => c.run(() => c.setDesktop(hide: value))),
@@ -388,22 +397,11 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
           onChanged: c.desktop == null ? null : (value) => c.run(() => c.setDesktop(startup: value))),
         Text(tr(context, "Перетащите файлы или папку на устройство, чтобы подготовить передачу."), style: TextStyle(color: subdued)),
       ],
-      SizedBox(height: 12),
-      Text(c.node?.relayHost?.online == true ? tr(context, "Интернет: ретранслятор подключён")
-        : c.relayAddress == null ? tr(context, "Интернет: ретранслятор не настроен") : tr(context, "Интернет: ожидается сервер"), style: TextStyle(color: subdued)),
-      TextButton.icon(onPressed: c.busy ? null : _relaySettings, icon: Icon(Icons.public_rounded),
-        label: Text(tr(context, "Настроить доступ без VPN"))),
       Divider(height: 32),
-      Text(tr(context, "Резервное копирование фото"), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-      SizedBox(height: 8),
-      Text(tr(context, "Новые фото из выбранных папок отправляются на устройство ниже. Оригиналы сохраняются; одинаковые снимки повторно не передаются."), style: TextStyle(color: subdued)),
+      SectionHeading(tr(context, 'Резервное копирование фото'), help: tr(context, 'Новые фото из выбранных папок отправляются на устройство ниже. Оригиналы сохраняются; одинаковые снимки повторно не передаются.')),
       if (backup != null) ...[
-        DropdownButton<String>(isExpanded: true,
-          selectedItemBuilder: (context) => c.peers.map((peer) => Align(alignment: Alignment.centerLeft, child: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis))).toList(),
-          value: c.peers.any((p) => p.id == backup.peerId) ? backup.peerId : null,
-          hint: Text(tr(context, "Куда копировать фото")),
-          items: c.peers.map((peer) => DropdownMenuItem(value: peer.id, child: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis))).toList(),
-          onChanged: (value) async { backup.peerId = value; await backup.save(); c.changed(); }),
+        ChoiceField<String>(label: tr(context, 'Куда копировать фото'), value: c.peers.any((peer) => peer.id == backup.peerId) ? backup.peerId : null,
+          options: {for (final peer in c.peers) peer.id: peer.name}, onChanged: (value) async { backup.peerId = value; await backup.save(); c.changed(); }), const SizedBox(height: 12),
         for (final root in backup.sources.roots()) ListTile(contentPadding: EdgeInsets.zero,
           leading: Icon(Icons.folder_outlined), title: Text(root.name),
           trailing: IconButton(tooltip: tr(context, "Убрать из резервного копирования"), icon: Icon(Icons.close_rounded),
@@ -425,14 +423,7 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   }
 
   Future<void> _sendText() async {
-    final text = TextEditingController();
-    final value = await showDialog<String>(context: context, builder: (context) => AlertDialog(
-      title: Text(tr(context, "Отправить текст")), content: SizedBox(width: 420,
-        child: TextField(controller: text, minLines: 3, maxLines: 8, autofocus: true,
-          decoration: InputDecoration(hintText: tr(context, "Текст или ссылка")))),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text(tr(context, "Отмена"))),
-        FilledButton(onPressed: () => Navigator.pop(context, text.text), child: Text(tr(context, "Отправить")))]));
-    text.dispose();
+    final value = await showDialog<String>(context: context, builder: (_) => TextComposeDialog(recipient: c.selectedPeer?.name));
     if (value != null) await c.run(() => c.sendText(value));
   }
 
@@ -481,182 +472,144 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
-  Widget _themeSwitch() {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return Container(decoration: BoxDecoration(border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-      borderRadius: BorderRadius.circular(10)), child: Row(mainAxisSize: MainAxisSize.min, children: [
-      IconButton(key: ValueKey('theme-light'), tooltip: tr(context, "Светлая тема"), isSelected: !dark,
-        style: IconButton.styleFrom(foregroundColor: subdued, backgroundColor: !dark ? mint.withValues(alpha: .10) : null),
-        onPressed: () => c.run(() => c.setAppearance(theme: 'light')), icon: Icon(Icons.light_mode_outlined)),
-      IconButton(key: ValueKey('theme-dark'), tooltip: tr(context, "Тёмная тема"), isSelected: dark,
-        style: IconButton.styleFrom(foregroundColor: subdued, backgroundColor: dark ? mint.withValues(alpha: .14) : null),
-        onPressed: () => c.run(() => c.setAppearance(theme: 'dark')), icon: Icon(Icons.dark_mode_outlined)),
-    ]));
-  }
+  Widget _themeSwitch() => PopupMenuButton<String>(key: const ValueKey('theme-menu'), tooltip: tr(context, 'Тема'),
+    initialValue: c.themePreference, position: PopupMenuPosition.under,
+    onSelected: (value) => c.run(() => c.setAppearance(theme: value)),
+    icon: Icon(switch (c.themePreference) { 'light' => Icons.light_mode_outlined, 'dark' => Icons.dark_mode_outlined, _ => Icons.brightness_auto_outlined }),
+    itemBuilder: (context) => [for (final item in [('light', Icons.light_mode_outlined, 'Светлая'), ('dark', Icons.dark_mode_outlined, 'Тёмная'), ('system', Icons.brightness_auto_outlined, 'Как в системе')])
+      PopupMenuItem(value: item.$1, child: Row(children: [Icon(item.$2, color: mint), const SizedBox(width: 12), Expanded(child: Text(tr(context, item.$3))),
+        if (c.themePreference == item.$1) Icon(Icons.check_rounded, color: mint)]))]);
 
   Widget _brandHeader(bool compact) => Container(
     padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 24, vertical: 12),
     decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant))),
-    child: Row(children: [
-      Image.asset('assets/icons/brand.png', width: compact ? 32 : 42, height: compact ? 32 : 42, semanticLabel: 'LinkInDrop'),
-      SizedBox(width: 10),
-      Expanded(child: Text('LinkInDrop', maxLines: 1, overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -.6))),
+    child: Row(children: [Image.asset('assets/icons/brand.png', width: 36, height: 36, semanticLabel: 'LinkInDrop'), const SizedBox(width: 10),
+      Expanded(child: Text('LinkInDrop', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -.6))),
+      if (!compact) ...[const Icon(Icons.desktop_windows_outlined, size: 22), const SizedBox(width: 8),
+        ConstrainedBox(constraints: const BoxConstraints(maxWidth: 260), child: TextButton(onPressed: _rename, child: Text(c.deviceName, maxLines: 1, overflow: TextOverflow.ellipsis))), const SizedBox(width: 16)],
       _themeSwitch(),
-      if (!compact) ...[SizedBox(width: 20), Icon(Icons.desktop_windows_outlined, size: 22), SizedBox(width: 8),
-        Flexible(child: TextButton(onPressed: _rename, child: Text(c.deviceName, maxLines: 1, overflow: TextOverflow.ellipsis)))],
     ]));
 
-  Widget _destination(int index, IconData icon, String label) => Padding(
-    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-    child: IconButton(key: ValueKey('nav-$index'), tooltip: label, isSelected: _page == index,
-      style: IconButton.styleFrom(fixedSize: Size(52, 52),
-        foregroundColor: _page == index ? mint : subdued,
-        backgroundColor: _page == index ? mint.withValues(alpha: .10) : null,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-      onPressed: () => _navigate(index), icon: Icon(icon, size: 26)));
+  Widget _destination(int index, IconData icon, String label) => Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    child: TextButton(key: ValueKey('nav-$index'), style: TextButton.styleFrom(alignment: Alignment.centerLeft,
+      foregroundColor: _page == index ? mint : subdued, backgroundColor: _page == index ? mint.withValues(alpha: .10) : null),
+      onPressed: () => _navigate(index), child: Row(children: [Icon(icon), const SizedBox(width: 12), Expanded(child: Text(label))])));
 
-  Widget _rail() => Container(width: 80, decoration: BoxDecoration(
-    border: Border(right: BorderSide(color: Theme.of(context).colorScheme.outlineVariant))),
-    child: Column(children: [SizedBox(height: 12),
-      _destination(0, Icons.file_upload_outlined, tr(context, "Передача")),
-      _destination(1, Icons.file_download_outlined, tr(context, "Полученные")),
-      _destination(2, Icons.devices_outlined, tr(context, "Устройства")),
-      Spacer(), _destination(3, Icons.settings_outlined, tr(context, "Настройки")), SizedBox(height: 16)]));
+  Widget _rail() => Container(width: 184, decoration: BoxDecoration(border: Border(right: BorderSide(color: Theme.of(context).colorScheme.outlineVariant))),
+    child: Column(children: [const SizedBox(height: 16), _destination(0, Icons.file_upload_outlined, tr(context, 'Передача')),
+      _destination(1, Icons.file_download_outlined, tr(context, 'Полученные')), _destination(2, Icons.devices_outlined, tr(context, 'Устройства')),
+      const Spacer(), _destination(3, Icons.settings_outlined, tr(context, 'Настройки')), const SizedBox(height: 16)]));
 
-  Widget _pageHeader(String title) => Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-    Expanded(child: Text(title, maxLines: 2, style: TextStyle(fontSize: _compact ? 25 : 32, fontWeight: FontWeight.w700, letterSpacing: -.6))),
-    SizedBox(width: 8),
-    if (_compact && (_viewportWidth < 360 || MediaQuery.textScalerOf(context).scale(14) > 18)) IconButton(key: ValueKey('received-shortcut'),
-      tooltip: tr(context, 'Полученные файлы'), onPressed: c.node == null ? null : c.revealReceivedFolder, icon: Icon(Icons.folder_open_outlined))
-    else if (_compact) TextButton.icon(key: ValueKey('received-shortcut'),
-      style: TextButton.styleFrom(padding: EdgeInsets.symmetric(horizontal: 6), minimumSize: Size(44, 44)),
-      onPressed: c.node == null ? null : c.revealReceivedFolder,
-      icon: Icon(Icons.folder_open_outlined, size: 20), label: Text(tr(context, "Полученные файлы"),
-        maxLines: 1, style: TextStyle(fontSize: 12)))
-    else TextButton.icon(key: ValueKey('received-shortcut'), onPressed: c.node == null ? null : c.revealReceivedFolder,
-      icon: Icon(Icons.folder_open_outlined), label: Text(tr(context, "Полученные файлы"))),
-  ]);
+  Widget _pageHeader(String title) => Text(title, style: TextStyle(fontSize: _compact ? 26 : 32, fontWeight: FontWeight.w700, letterSpacing: -.6));
 
-  Widget _recipient() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text(tr(context, "Получатель"), style: TextStyle(color: subdued)), SizedBox(height: 8),
-    LayoutBuilder(builder: (context, constraints) {
-      final selector = DropdownButtonFormField<String>(key: ValueKey('recipient-${c.selectedPeer?.id}'),
-        value: c.selectedPeer?.id, isExpanded: true,
-        hint: Text(tr(context, "Выберите устройство")),
-        items: c.peers.map((peer) => DropdownMenuItem(value: peer.id, child: Row(children: [
-          Icon(Icons.devices_outlined, size: 20), SizedBox(width: 10),
-          Expanded(child: Text(peer.name, maxLines: 1, overflow: TextOverflow.ellipsis)), SizedBox(width: 8),
-          Icon(Icons.circle, size: 8, color: peer.online ? Color(0xff22a85c) : subdued),
-          SizedBox(width: 6), Text(peer.online ? tr(context, "В сети") : tr(context, "Не в сети"), style: TextStyle(fontSize: 12, color: subdued)),
-        ]))).toList(), onChanged: (value) { if (value != null) c.selectPeer(value); });
-      if (constraints.maxWidth < 900) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [selector,
-        SizedBox(height: 4), Wrap(alignment: WrapAlignment.spaceBetween, spacing: 8, children: [
-          TextButton.icon(onPressed: c.node == null ? null : _browseFiles, icon: Icon(Icons.folder_outlined, size: 18), label: Text(tr(context, "Файлы устройства"))),
-          if (c.peers.isEmpty) TextButton.icon(onPressed: c.busy ? null : _showInvite, icon: Icon(Icons.add, size: 18), label: Text(tr(context, "Добавить устройство")))])]);
-      return Row(children: [Expanded(child: selector), SizedBox(width: 12),
-        OutlinedButton.icon(onPressed: c.node == null ? null : _browseFiles, icon: Icon(Icons.folder_outlined), label: Text(tr(context, "Файлы устройства"))),
-        SizedBox(width: 12), OutlinedButton.icon(onPressed: c.busy ? null : _showInvite,
-          icon: Icon(Icons.add), label: Text(tr(context, "Добавить устройство")))]);
-    }),
+  Widget _recipient() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    ChoiceField<String>(key: const ValueKey('recipient'), label: tr(context, 'Получатель'), value: c.selectedPeer?.id,
+      options: {for (final peer in c.peers) peer.id: '${peer.name} · ${peer.online ? tr(context, 'В сети') : tr(context, 'Не в сети')}'},
+      icon: Icons.devices_outlined, selectedChild: c.selectedPeer == null ? null : Row(children: [
+        Expanded(child: Text(c.selectedPeer!.name, maxLines: 1, overflow: TextOverflow.ellipsis)), const SizedBox(width: 8),
+        Icon(Icons.circle, size: 8, color: c.selectedPeer!.online ? successColor(context) : subdued), const SizedBox(width: 6),
+        Text(c.selectedPeer!.online ? tr(context, 'В сети') : tr(context, 'Не в сети'), style: TextStyle(color: c.selectedPeer!.online ? successColor(context) : subdued, fontSize: 12)),
+      ]), onChanged: c.busy ? null : c.selectPeer),
+    const SizedBox(height: 8), Align(alignment: Alignment.centerLeft, child: TextButton.icon(onPressed: c.node == null ? null : _browseFiles,
+      icon: const Icon(Icons.folder_open_outlined), label: Text(c.selectedPeer == null ? tr(context, 'Файлы устройства') : tr(context, 'Открыть файлы {0}', [c.selectedPeer!.name])))),
+    if (c.peers.isEmpty) Align(alignment: Alignment.centerLeft, child: OutlinedButton.icon(onPressed: c.busy ? null : _showInvite,
+      icon: const Icon(Icons.add_rounded), label: Text(tr(context, 'Добавить устройство')))),
   ]);
 
   Future<void> _selectFolder() async {
-    final selected = await getDirectoryPath();
-    if (selected != null && mounted) await c.run(() => c.stageFiles([selected]));
+    if (c.isAndroid) {
+      final selected = await AndroidFolders().pick();
+      if (selected == null) return;
+      final path = await const MediaLibrary().exportFolder(selected['uri'] as String);
+      if (path != null) await c.stageFiles([path]);
+    } else {
+      final selected = await getDirectoryPath();
+      if (selected != null && mounted) await c.run(() => c.stageFiles([selected]));
+    }
+  }
+
+  Future<void> _attachments() async {
+    final next = await showModalBottomSheet<bool>(context: context, isScrollControlled: true, useSafeArea: true, showDragHandle: false,
+      builder: (context) => AttachmentSheet(controller: c, pickFiles: _sendFiles, pickFolder: _selectFolder));
+    if (next == true && mounted) await _composeMedia();
+  }
+
+  Future<void> _composeMedia() => showModalBottomSheet<void>(context: context, isScrollControlled: true, useSafeArea: true,
+    constraints: const BoxConstraints(maxWidth: 620), builder: (context) => SizedBox(height: MediaQuery.sizeOf(context).height * .88,
+      child: MediaComposer(controller: c, addFiles: () async { Navigator.pop(context); await _attachments(); })));
+
+  Future<void> _pushClipboard() async {
+    final before = c.activities.isEmpty ? null : c.activities.first;
+    await c.run(c.pushClipboard);
+    if (!mounted) return;
+    final activity = c.activities.isEmpty ? null : c.activities.first;
+    if (activity != null && activity != before) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: activity.error ? Theme.of(context).colorScheme.errorContainer : successColor(context),
+      content: Text(activity.error ? activity.detail : activity.title, style: TextStyle(color: activity.error ? Theme.of(context).colorScheme.onErrorContainer : Colors.white))));
   }
 
   Widget _sourceRow(SelectedSource source) => Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Row(children: [
-    Container(width: 42, height: 42, decoration: BoxDecoration(color: mint.withValues(alpha: .08), borderRadius: BorderRadius.circular(8)),
-      child: Icon(source.directory ? Icons.folder_outlined : Icons.description_outlined, color: mint)),
+    source.directory ? Container(width: 56, height: 56, decoration: BoxDecoration(color: mint.withValues(alpha: .08), borderRadius: BorderRadius.circular(10)),
+      child: Icon(Icons.folder_outlined, color: mint)) : MediaThumbnail(path: source.path, name: source.name),
     SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(source.name, maxLines: 2, overflow: TextOverflow.ellipsis),
       Text(source.directory ? tr(context, "Папка со всем содержимым") : _fileSize(source.size), style: TextStyle(color: subdued, fontSize: 12)),
     ])), IconButton(tooltip: tr(context, "Убрать файл"), onPressed: c.busy || c.selection.sending ? null : () => c.run(() => c.removeSelected(source)), icon: Icon(Icons.close, size: 20)),
   ]));
 
-  Widget _photo(SelectedSource source) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Stack(children: [
-      AspectRatio(aspectRatio: _compact ? 1.4 : 2.1, child: ClipRRect(borderRadius: BorderRadius.circular(8),
-        child: Image.file(File(source.path), fit: BoxFit.cover, cacheWidth: 600,
-          errorBuilder: (_, error, stack) => ColoredBox(color: surface, child: Center(child: Icon(Icons.image_outlined, size: 36)))))),
-      Positioned(top: 4, right: 4, child: IconButton.filledTonal(tooltip: tr(context, "Убрать файл"),
-        style: IconButton.styleFrom(backgroundColor: surface.withValues(alpha: .95)),
-        onPressed: c.busy || c.selection.sending ? null : () => c.run(() => c.removeSelected(source)), icon: Icon(Icons.close, size: 18))),
-    ]), SizedBox(height: 6), Text(source.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-    Text(_fileSize(source.size), style: TextStyle(color: subdued, fontSize: 12)),
+  Widget _selectionPreview() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    const SizedBox(height: 20), SectionHeading(tr(context, 'К отправке')),
+    Text('${c.selection.items.length} · ${_fileSize(c.selection.totalBytes)}${c.selection.hasDirectories ? tr(context, ' + папки') : ''}', style: TextStyle(color: subdued)),
+    const SizedBox(height: 8), for (final source in c.selection.items) ...[InkWell(onTap: source.image || source.video ? _composeMedia : null, child: _sourceRow(source)), const Divider(height: 1)],
   ]);
 
-  Widget _selectionPreview() {
-    final photos = c.selection.items.where((source) => source.image).toList();
-    final others = c.selection.items.where((source) => !source.image);
+  Widget _transferPage() {
+    final disabled = c.busy || c.selection.loading || c.selection.sending;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      SizedBox(height: 20),
-      Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center, spacing: 16, runSpacing: 4, children: [
-        Text(tr(context, "К отправке"), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-        Text('${c.selection.items.length} · ${_fileSize(c.selection.totalBytes)}${c.selection.hasDirectories ? tr(context, " + папки") : ''}', style: TextStyle(color: subdued)),
-      ]), SizedBox(height: 12),
-      if (photos.isNotEmpty) LayoutBuilder(builder: (context, constraints) {
-        final columns = constraints.maxWidth < 300 ? 1 : 2;
-        final availableWidth = (constraints.maxWidth - (columns - 1) * 12) / columns;
-        final width = !_compact && availableWidth > 440 ? 440.0 : availableWidth;
-        return Wrap(spacing: 12, runSpacing: 14, children: photos.map((source) => SizedBox(width: width, child: _photo(source))).toList());
-      }),
-      if (others.isNotEmpty) ...[SizedBox(height: 10), for (final source in others) ...[_sourceRow(source), Divider(height: 1)]],
+      _pageHeader(tr(context, 'Передача')), const SizedBox(height: 24), _recipient(), const SizedBox(height: 16),
+      if (c.isAndroid) ...[
+        if (c.selection.items.isEmpty) FilledButton.icon(key: const ValueKey('attach'), onPressed: disabled ? null : _attachments,
+          icon: const Icon(Icons.attach_file_rounded), label: Text(tr(context, 'Прикрепить')))
+        else OutlinedButton.icon(key: const ValueKey('attach'), onPressed: disabled ? null : _attachments, icon: const Icon(Icons.attach_file_rounded), label: Text(tr(context, 'Прикрепить'))), const SizedBox(height: 8),
+        ActionRow(flexes: const [2, 3], children: [
+          OutlinedButton.icon(key: const ValueKey('compose-text'), onPressed: disabled ? null : _sendText, icon: const Icon(Icons.notes_outlined), label: Text(tr(context, 'Текст'))),
+          OutlinedButton.icon(key: const ValueKey('send-clipboard'), onPressed: disabled || c.selectedPeer == null ? null : _pushClipboard, icon: const Icon(Icons.send_rounded), label: Text(tr(context, 'Отправить буфер'))),
+        ]),
+      ] else ActionRow(children: [
+        OutlinedButton.icon(onPressed: disabled ? null : _sendFiles, icon: const Icon(Icons.description_outlined), label: Text(tr(context, 'Выбрать файлы'))),
+        OutlinedButton.icon(onPressed: disabled ? null : _selectFolder, icon: const Icon(Icons.folder_outlined), label: Text(tr(context, 'Добавить папку'))),
+        OutlinedButton.icon(key: const ValueKey('compose-text'), onPressed: disabled ? null : _sendText, icon: const Icon(Icons.notes_outlined), label: Text(tr(context, 'Текст'))),
+        OutlinedButton.icon(key: const ValueKey('send-clipboard'), onPressed: disabled || c.selectedPeer == null ? null : _pushClipboard, icon: const Icon(Icons.send_rounded), label: Text(tr(context, 'Отправить буфер'))),
+      ]),
+      Row(children: [Expanded(child: Text(c.selectedPeer == null ? tr(context, 'Выберите устройство') : tr(context, 'Отправка сразу на {0}', [c.selectedPeer!.name]),
+        style: TextStyle(color: subdued, fontSize: 12))), HelpButton(title: tr(context, 'Отправить буфер'),
+          message: tr(context, 'Сразу отправляет текущий текст или изображение из буфера выбранному получателю. Для редактирования используйте «Текст».'))]),
+      if (c.selection.items.isNotEmpty) _selectionPreview(),
+      if (!c.isAndroid) ...[const SizedBox(height: 16), _dropZone()],
+      if (c.selection.loading) const Padding(padding: EdgeInsets.all(8), child: LinearProgressIndicator()),
+      if (c.selection.items.isNotEmpty) ...[const SizedBox(height: 16), Align(alignment: _compact ? Alignment.center : Alignment.centerRight, child: FilledButton.icon(
+        key: const ValueKey('send-selection'), onPressed: disabled || c.selectedPeer == null ? null : () => c.run(c.sendSelection),
+        icon: const Icon(Icons.file_upload_outlined), label: Text(c.selection.sending ? tr(context, 'Добавляем в очередь…') : c.selection.hasDirectories ? tr(context, 'Передать выбранное') : trFiles(context, c.selection.items.length))))],
+      const SizedBox(height: 24), if ((c.queue?.pending ?? 0) > 0) ...[_queue(), const SizedBox(height: 24)], _history(),
     ]);
   }
 
-  Widget _transferPage() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    _pageHeader(tr(context, "Передача")), SizedBox(height: 20), _recipient(),
-    if (c.selection.items.isNotEmpty) _selectionPreview(),
-    SizedBox(height: 16),
-    if (c.isAndroid) OutlinedButton.icon(onPressed: c.busy || c.selection.loading || c.selection.sending ? null : _sendFiles,
-      icon: Icon(Icons.add), label: Text(tr(context, "Добавить файлы")))
-    else _dropZone(),
-    if (c.selection.loading) Padding(padding: EdgeInsets.all(8), child: LinearProgressIndicator()),
-    SizedBox(height: 10),
-    if (_compact) ...[
-      Align(alignment: Alignment.centerLeft, child: TextButton.icon(onPressed: c.busy ? null : _sendText,
-        icon: Icon(Icons.notes_outlined), label: Text(tr(context, "Добавить текст")))),
-      if (c.selection.items.isNotEmpty) FilledButton(key: ValueKey('send-selection'),
-        onPressed: c.busy || c.selectedPeer == null || c.selection.sending || c.selection.loading ? null : () => c.run(c.sendSelection),
-        child: Text(c.selection.sending ? tr(context, "Добавляем в очередь…") : c.selection.hasDirectories ? tr(context, 'Передать выбранное') : trFiles(context, c.selection.items.length))),
-    ] else Row(children: [TextButton.icon(onPressed: c.busy ? null : _sendText,
-      icon: Icon(Icons.notes_outlined), label: Text(tr(context, "Добавить текст"))), Spacer(),
-      if (c.selection.items.isNotEmpty) FilledButton(key: ValueKey('send-selection'),
-        onPressed: c.busy || c.selectedPeer == null || c.selection.sending || c.selection.loading ? null : () => c.run(c.sendSelection),
-        child: Text(c.selection.sending ? tr(context, "Добавляем в очередь…") : c.selection.hasDirectories ? tr(context, 'Передать выбранное') : trFiles(context, c.selection.items.length))),
-    ]),
-    SizedBox(height: 20),
-    if ((c.queue?.pending ?? 0) > 0) ...[_queue(), SizedBox(height: 16)],
-    _history(),
-  ]);
-
   Widget _receivedPage() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    _pageHeader(tr(context, "Полученные")), SizedBox(height: 20),
-    Text(c.receiveDestination ?? tr(context, "Встроенная папка LinkInDrop"), style: TextStyle(color: subdued)),
-    SizedBox(height: 16), _history(receivedOnly: true),
-    SizedBox(height: 24),
-    Text(tr(context, "Приём файлов"), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-    SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(tr(context, "Разрешить приём файлов")),
-      value: c.receiveFiles, onChanged: (value) => c.setSettings(filesReceiving: value)),
+    _pageHeader(tr(context, 'Полученные')), const SizedBox(height: 24), ReceiveDestination(controller: c), const SizedBox(height: 16),
+    SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(tr(context, 'Разрешить приём файлов')),
+      value: c.receiveFiles, onChanged: (value) => c.run(() => c.setSettings(filesReceiving: value))),
+    const SizedBox(height: 24), _history(receivedOnly: true),
   ]);
 
-  Widget _appearance() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text(tr(context, "Оформление и язык"), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)), SizedBox(height: 16),
-    DropdownButtonFormField<String>(key: ValueKey('theme-${c.themePreference}'), value: c.themePreference, isExpanded: true,
-      decoration: InputDecoration(labelText: tr(context, "Тема")), items: [
-        DropdownMenuItem(value: 'system', child: Text(tr(context, "Как в системе"))),
-        DropdownMenuItem(value: 'light', child: Text(tr(context, "Светлая"))), DropdownMenuItem(value: 'dark', child: Text(tr(context, "Тёмная")))],
-      onChanged: (value) { if (value != null) unawaited(c.run(() => c.setAppearance(theme: value))); }),
-    SizedBox(height: 16),
-    DropdownButtonFormField<String>(key: ValueKey('language-${c.languagePreference}'), value: c.languagePreference, isExpanded: true,
-      decoration: InputDecoration(labelText: tr(context, "Язык")), items: [
-        DropdownMenuItem(value: 'system', child: Text(tr(context, "Как в системе"))),
-        DropdownMenuItem(value: 'ru', child: Text('Русский')), DropdownMenuItem(value: 'en', child: Text('English'))],
-      onChanged: (value) { if (value != null) unawaited(c.run(() => c.setAppearance(language: value))); }),
-    SizedBox(height: 12), ListTile(contentPadding: EdgeInsets.zero, title: Text(c.deviceName),
-      subtitle: Text(tr(context, "Имя устройства")), trailing: IconButton(tooltip: tr(context, "Изменить имя"), onPressed: _rename, icon: Icon(Icons.edit_outlined))),
+  Widget _appearance() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    SectionHeading(tr(context, 'Оформление и язык')),
+    ChoiceField<String>(label: tr(context, 'Тема'), value: c.themePreference, icon: Icons.palette_outlined,
+      options: {'system': tr(context, 'Как в системе'), 'light': tr(context, 'Светлая'), 'dark': tr(context, 'Тёмная')},
+      onChanged: (value) => c.run(() => c.setAppearance(theme: value))), const SizedBox(height: 16),
+    ChoiceField<String>(label: tr(context, 'Язык'), value: c.languagePreference, icon: Icons.language_rounded,
+      options: {'system': tr(context, 'Как в системе'), 'ru': 'Русский', 'en': 'English'}, onChanged: (value) => c.run(() => c.setAppearance(language: value))),
+    const SizedBox(height: 12), ListTile(contentPadding: EdgeInsets.zero, title: Text(c.deviceName), subtitle: Text(tr(context, 'Имя устройства')),
+      trailing: IconButton(tooltip: tr(context, 'Изменить имя'), onPressed: _rename, icon: const Icon(Icons.edit_outlined))),
   ]);
 
   @override
@@ -675,27 +628,33 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
             SwitchListTile(title: Text(tr(context, 'Разрешить доступ к моим файлам и папкам')),
               subtitle: Text(tr(context, 'Доступ только для привязанных устройств')), value: c.shareFiles,
               onChanged: (value) => c.setSettings(fileSharing: value)),
-            TextButton(onPressed: _manageSharedFiles, child: Text(tr(context, 'Выбрать файлы и папки'))),
+            Align(alignment: Alignment.centerLeft, child: OutlinedButton.icon(onPressed: _manageSharedFiles, icon: const Icon(Icons.folder_outlined), label: Text(tr(context, 'Выбрать файлы и папки')))),
           ])),
         ],
         if (_page == 3) ...[
           _pageHeader(tr(context, 'Настройки')), SizedBox(height: 20), _appearance(), Divider(height: 32),
           _section(tr(context, 'Общий буфер'), Icons.content_paste, _clipboard()), SizedBox(height: 16),
-          _section(tr(context, 'Фоновая работа и фотобэкап'), Icons.settings_outlined, _settings()), SizedBox(height: 16),
-          _section(tr(context, 'Хранение и подключение'), Icons.tune, ReliabilityPanel(controller: c,
-            openFolder: (peer, folder) => _browseFiles(target: peer, initial: folder))),
+          _settings(), SizedBox(height: 16),
+          SectionHeading(tr(context, 'Интернет-подключение')),
+      SizedBox(height: 12),
+      Text(c.node?.relayHost?.online == true ? tr(context, "Интернет: ретранслятор подключён")
+        : c.relayAddress == null ? tr(context, "Интернет: ретранслятор не настроен") : tr(context, "Интернет: ожидается сервер"), style: TextStyle(color: subdued)),
+      TextButton.icon(onPressed: c.busy ? null : _relaySettings, icon: Icon(Icons.public_rounded),
+        label: Text(tr(context, "Настроить доступ без VPN"))),
+          const Divider(height: 32),
+          ReliabilityPanel(controller: c, openFolder: (peer, folder) => _browseFiles(target: peer, initial: folder)),
         ],
       ],
     ];
     final content = SingleChildScrollView(key: PageStorageKey('home-scroll'), controller: _scroll,
       padding: EdgeInsets.fromLTRB(compact ? 18 : 36, compact ? 16 : 24, compact ? 18 : 36, 24),
-      child: Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: BoxConstraints(maxWidth: 1280),
+      child: Align(alignment: Alignment.topCenter, heightFactor: 1, child: ConstrainedBox(constraints: BoxConstraints(maxWidth: 1280),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: sections))));
     return Scaffold(
       body: SafeArea(child: Column(children: [
         _brandHeader(compact),
         if (c.busy) LinearProgressIndicator(minHeight: 2) else SizedBox(height: 2),
-        Expanded(child: Row(children: [
+        Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           if (!compact) _rail(),
           Expanded(child: Scrollbar(controller: _scroll, thumbVisibility: !compact, child: content)),
         ])),
@@ -709,18 +668,16 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   }));
 
   Widget _devices() => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Row(children: [Expanded(child: Text(tr(context, "Устройства"), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
-      _badge(tr(context, "{0} в сети", [c.onlineCount]), mint)]),
+    Row(children: [Expanded(child: Text(tr(context, 'Мои устройства'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
+      _badge(tr(context, "{0} в сети", [c.onlineCount]), successColor(context))]),
     SizedBox(height: 18),
     if (c.peers.isEmpty) Padding(padding: EdgeInsets.symmetric(vertical: 24),
       child: Text(tr(context, "Свяжите телефон и компьютер один раз.\nДальше они будут узнавать друг друга."), style: TextStyle(color: subdued, height: 1.6))),
     for (final peer in c.peers) Padding(padding: EdgeInsets.only(bottom: 8), child: _device(peer)),
     SizedBox(height: 12),
-    Wrap(spacing: 8, runSpacing: 8, children: [
-      FilledButton.icon(onPressed: c.busy ? null : _showInvite, icon: Icon(Icons.add_rounded), label: Text(tr(context, "Добавить"))),
-      OutlinedButton(onPressed: c.busy ? null : _enterCode, child: Text(tr(context, "Ввести код"))),
-      if (c.isAndroid) IconButton(onPressed: c.busy ? null : _scan, tooltip: tr(context, "Сканировать QR"), icon: Icon(Icons.qr_code_scanner_rounded)),
-    ]),
+    ActionRow(children: [FilledButton.icon(onPressed: c.busy ? null : _showInvite, icon: const Icon(Icons.add_rounded), label: Text(tr(context, 'Добавить'))),
+      OutlinedButton(onPressed: c.busy ? null : _enterCode, child: Text(tr(context, 'Ввести код')))]),
+    if (c.isAndroid) ...[const SizedBox(height: 8), OutlinedButton.icon(onPressed: c.busy ? null : _scan, icon: const Icon(Icons.qr_code_scanner_rounded), label: Text(tr(context, 'Сканировать QR')))],
     if (c.pairingStage != null) Padding(padding: EdgeInsets.only(top: 12),
       child: Text(c.pairingStage!, style: TextStyle(color: mint))),
     if (c.node?.nearby.isNotEmpty == true) Padding(padding: EdgeInsets.only(top: 16),
@@ -768,48 +725,41 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   }
 
   Widget _clipboard() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text(tr(context, "Текст, ссылки и изображения"), style: TextStyle(fontSize: 18)),
-    SizedBox(height: 8),
-    Text(c.isAndroid ? tr(context, "Для отправки откройте LinkInDrop и нажмите «Отправить буфер» или используйте «Поделиться».")
-      : tr(context, "Скопируйте здесь — вставьте на связанном устройстве. Приложение должно оставаться запущенным."),
-      style: TextStyle(color: subdued, height: 1.5)),
-    SizedBox(height: 12),
-    SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(tr(context, "Отправлять изменения")),
-      subtitle: Text(c.isAndroid ? tr(context, "Пока приложение открыто") : tr(context, "Автоматически"), style: TextStyle(color: subdued)),
-      value: c.autoClipboard, onChanged: (value) => unawaited(c.setSettings(automatic: value))),
-    SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(tr(context, "Принимать в буфер")),
-      value: c.receiveClipboard, onChanged: (value) => unawaited(c.setSettings(clipboardReceiving: value))),
-    SizedBox(height: 12),
-    Wrap(spacing: 8, runSpacing: 8, children: [
-      FilledButton.icon(onPressed: c.busy || c.onlineCount == 0 ? null : () => c.run(c.pushClipboard),
-        icon: Icon(Icons.send_rounded, size: 18), label: Text(tr(context, "Отправить буфер"))),
-      TextButton(onPressed: c.busy || c.onlineCount == 0 ? null : _sendText, child: Text(tr(context, "Написать текст"))),
-    ]),
+    SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(tr(context, 'Отправлять изменения')),
+      subtitle: Text(c.isAndroid ? tr(context, 'Пока приложение открыто') : tr(context, 'Автоматически')),
+      value: c.autoClipboard, onChanged: (value) => c.run(() => c.setSettings(automatic: value))),
+    SwitchListTile(contentPadding: EdgeInsets.zero, title: Text(tr(context, 'Принимать в буфер')),
+      value: c.receiveClipboard, onChanged: (value) => c.run(() => c.setSettings(clipboardReceiving: value))),
   ]);
 
-  Widget _history({bool receivedOnly = false}) => _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text(tr(context, "Последние передачи"), style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-    SizedBox(height: 12),
-    if (c.activities.isEmpty) Padding(padding: EdgeInsets.symmetric(vertical: 16),
-      child: Text(tr(context, "Здесь появятся результаты передачи. Содержимое буфера не сохраняется."), style: TextStyle(color: subdued))),
-    for (final activity in c.activities.where((item) => !receivedOnly || item.path != null).take(12)) ListTile(contentPadding: EdgeInsets.zero,
-      onTap: () => _showActivity(activity),
-      leading: Icon(activity.error ? Icons.error_outline_rounded : activity.path != null
-        ? Icons.insert_drive_file_outlined : Icons.check_circle_outline_rounded,
-        color: activity.error ? Theme.of(context).colorScheme.error : mint),
-      title: Text(activity.title), subtitle: Text(activity.detail.split(tr(context, "\n\nПодробности:")).first,
-        maxLines: activity.error ? null : 2, overflow: activity.error ? null : TextOverflow.ellipsis,
-        style: TextStyle(color: subdued)),
-      trailing: activity.path == null ? Text('${activity.time.hour.toString().padLeft(2, '0')}:${activity.time.minute.toString().padLeft(2, '0')}',
-        style: TextStyle(color: subdued, fontSize: 12)) : IconButton(icon: Icon(Icons.open_in_new_rounded),
-        tooltip: tr(context, "Открыть файл"), onPressed: () async {
-          if (activity.path!.startsWith('content://')) {
-            await c.run(() => c.platformChannel.invokeMethod<void>('openReceivedFile', {'location': activity.path})); return;
-          }
+  Widget _history({bool receivedOnly = false}) {
+    final items = c.activities.where((item) => receivedOnly ? item.path != null && item.kind != 'upload' : item.kind != null || item.path != null).take(12).toList();
+    final errors = c.activities.where((item) => item.error && item.kind == null).take(2);
+    return _panel(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SectionHeading(tr(context, 'Последние передачи')),
+      if (items.isEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 24), child: Column(children: [
+        Icon(receivedOnly ? Icons.inbox_outlined : Icons.swap_horiz_rounded, size: 40, color: subdued), const SizedBox(height: 12),
+        Text(tr(context, receivedOnly ? 'Пока нет полученных файлов' : 'Здесь появятся результаты передачи'), style: TextStyle(color: subdued)),
+      ])),
+      for (final activity in items) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: InkWell(onTap: () => _showActivity(activity), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (activity.thumbnailPath != null || activity.path != null) MediaThumbnail(path: activity.thumbnailPath ?? activity.path!, name: activity.name ?? activity.path!)
+        else Icon(activity.error ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded, color: activity.error ? Theme.of(context).colorScheme.error : successColor(context)),
+        const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(activity.name ?? activity.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+          Text(activity.detail, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: subdued, fontSize: 12)), const SizedBox(height: 4),
+          Text(activity.title, style: TextStyle(color: activity.error ? Theme.of(context).colorScheme.error : successColor(context), fontSize: 12)),
+        ])),
+        if (activity.path == null) Text('${activity.time.hour.toString().padLeft(2, '0')}:${activity.time.minute.toString().padLeft(2, '0')}', style: TextStyle(color: subdued, fontSize: 12))
+        else IconButton(icon: const Icon(Icons.open_in_new_rounded), tooltip: tr(context, 'Открыть файл'), onPressed: () => c.run(() async {
+          if (activity.path!.startsWith('content://')) { await c.platformChannel.invokeMethod<void>('openReceivedFile', {'location': activity.path}); return; }
           final result = await OpenFilex.open(activity.path!);
-          if (result.type != ResultType.done) c.record(Activity(tr(context, "Не удалось открыть"), result.message, error: true));
+          if (result.type != ResultType.done) throw FileSystemException(result.message);
         })),
-  ]));
+      ]))),
+      if (!receivedOnly) for (final activity in errors) ListTile(contentPadding: EdgeInsets.zero, onTap: () => _showActivity(activity),
+        leading: Icon(Icons.error_outline_rounded, color: Theme.of(context).colorScheme.error), title: Text(activity.title), subtitle: Text(activity.detail.split(tr(context, "\n\nПодробности:")).first)),
+    ]));
+  }
 
   Future<void> _dropFiles(List<String> paths) async {
     final failure = tr(context, 'Не получилось');
@@ -818,36 +768,21 @@ class _BridgeHomeState extends State<BridgeHome> with WidgetsBindingObserver {
   }
 
   Widget _dropZone() {
-    final empty = c.selection.items.isEmpty;
-    final content = Container(key: ValueKey('file-drop-zone'), width: double.infinity,
-      padding: EdgeInsets.all(empty ? 28 : 14), decoration: BoxDecoration(
-        color: mint.withValues(alpha: _dropping ? .12 : .025), borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: mint.withValues(alpha: _dropping ? 1 : .5))),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        if (empty) ...[Icon(Icons.upload_file_outlined, size: 52, color: mint), SizedBox(height: 16)],
-        Text(_dropping ? tr(context, "Отпустите, чтобы добавить") : empty ? tr(context, "Перетащите сюда файлы или папки") : tr(context, "Перетащите ещё файлы сюда"),
-          textAlign: TextAlign.center, style: TextStyle(fontSize: empty ? 20 : 14, fontWeight: FontWeight.w600)),
-        SizedBox(height: 10),
-        Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
-          OutlinedButton(onPressed: c.busy || c.selection.sending || c.selection.loading ? null : _sendFiles,
-            child: Text(empty ? tr(context, "Выбрать файлы") : tr(context, "Добавить файлы"))),
-          TextButton(onPressed: c.busy || c.selection.sending || c.selection.loading ? null : _selectFolder, child: Text(tr(context, "Добавить папку"))),
-        ]),
-      ]));
-    return DropTarget(onDragEntered: (_) => setState(() => _dropping = true),
-      onDragExited: (_) => setState(() => _dropping = false),
+    final content = Container(key: const ValueKey('file-drop-zone'), width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      decoration: BoxDecoration(color: mint.withValues(alpha: _dropping ? .12 : .025), borderRadius: BorderRadius.circular(12)),
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.upload_file_outlined, color: mint), const SizedBox(width: 12),
+        Flexible(child: Text(_dropping ? tr(context, 'Отпустите, чтобы добавить') : tr(context, 'Перетащите сюда файлы или папки'), textAlign: TextAlign.center))]));
+    return DropTarget(onDragEntered: (_) => setState(() => _dropping = true), onDragExited: (_) => setState(() => _dropping = false),
       onDragDone: (detail) { setState(() => _dropping = false); unawaited(_dropFiles(detail.files.map((file) => file.path).toList())); },
-      child: content);
+      child: CustomPaint(foregroundPainter: _DropBorder(mint.withValues(alpha: _dropping ? 1 : .4)), child: content));
   }
 
-  Widget _section(String title, IconData icon, Widget child) => Container(
-    decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)),
-    child: ExpansionTile(key: PageStorageKey(title), shape: Border(), collapsedShape: Border(),
-      leading: Icon(icon, color: mint), title: Text(title), tilePadding: EdgeInsets.symmetric(horizontal: 14),
-      childrenPadding: EdgeInsets.fromLTRB(14, 0, 14, 14), children: [child]));
+  Widget _section(String title, IconData icon, Widget child) => _panel(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    SectionHeading(title, help: title == tr(context, 'Общий буфер') ? tr(context, 'Скопируйте здесь — вставьте на связанном устройстве. Приложение должно оставаться запущенным.') : null), child,
+  ]));
 
   Widget _panel(Widget child) => Container(width: double.infinity, padding: EdgeInsets.all(_viewportWidth < 500 ? 12 : 16),
-    decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(8),
+    decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(12),
       border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)), child: child);
 
   Widget _badge(String text, Color color) => Container(padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -881,3 +816,18 @@ class _ScanScreenState extends State<ScanScreen> {
     }));
 }
 
+
+class _DropBorder extends CustomPainter {
+  const _DropBorder(this.color);
+  final Color color;
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()..addRRect(RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(12)));
+    final paint = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = 1;
+    for (final metric in path.computeMetrics()) {
+      for (double start = 0; start < metric.length; start += 12) { canvas.drawPath(metric.extractPath(start, start + 6), paint); }
+    }
+  }
+  @override
+  bool shouldRepaint(_DropBorder oldDelegate) => color != oldDelegate.color;
+}

@@ -293,12 +293,15 @@ class ClipboardPayload {
 }
 
 class Activity {
-  Activity(this.title, this.detail, {this.path, this.error = false})
+  Activity(this.title, this.detail, {this.path, this.thumbnailPath, this.name, this.kind, this.error = false})
       : time = DateTime.now();
   final String title;
   final String detail;
   final String? path;
   final bool error;
+  final String? thumbnailPath;
+  final String? name;
+  final String? kind;
   final DateTime time;
 }
 
