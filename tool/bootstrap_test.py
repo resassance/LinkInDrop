@@ -31,6 +31,8 @@ class BootstrapTest(unittest.TestCase):
                     target = root / name
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text('"linkindrop"\n')
+                (root / 'windows/runner/flutter_window.cpp').write_text('#include "flutter_window.h"\nflutter_controller_->engine()->SetNextFrameCallback([&]() {\n    this->Show();\n  });\n')
+                (root / 'linux/runner/my_application.cc').write_text('"linkindrop"\n  gtk_widget_show(GTK_WIDGET(window));\n  gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));\n  fl_register_plugins(FL_PLUGIN_REGISTRY(view));\n')
 
             with patch('shutil.which', return_value='/fake/flutter'), patch('subprocess.run', side_effect=create_platforms):
                 runpy.run_path(str(root / 'tool/bootstrap.py'), run_name='__main__')
@@ -38,6 +40,14 @@ class BootstrapTest(unittest.TestCase):
             self.assertIn('LinkInDrop', (root / 'windows/runner/main.cpp').read_text())
             self.assertIn('set(BINARY_NAME "LinkInDrop")', (root / 'windows/CMakeLists.txt').read_text())
             self.assertIn('LinkInDrop', (root / 'linux/runner/my_application.cc').read_text())
+            windows_runner = (root / 'windows/runner/flutter_window.cpp').read_text()
+            self.assertIn('GetCommandLineArguments()', windows_runner)
+            self.assertIn('"--autostart"', windows_runner)
+            linux_runner = (root / 'linux/runner/my_application.cc').read_text()
+            self.assertIn('gtk_widget_realize(GTK_WIDGET(window))', linux_runner)
+            self.assertIn('"--autostart"', linux_runner)
+            self.assertIn('if (start_hidden) gtk_widget_realize(GTK_WIDGET(view));', linux_runner)
+            self.assertLess(linux_runner.index('fl_register_plugins('), linux_runner.index('gtk_widget_realize(GTK_WIDGET(view))'))
             self.assertFalse((root / 'android/app/src/main/res/drawable/tile_icon.xml').exists())
             self.assertTrue((root / 'android/app/src/main/res/drawable/tile_icon.png').exists())
             self.assertTrue((root / 'android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml').exists())

@@ -2,15 +2,16 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:path/path.dart' as p;
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../l10n/messages.dart';
+import 'desktop_startup.dart';
 
 class DesktopShell with TrayListener, WindowListener {
-  DesktopShell({required this.directory, required this.hideOnClose, required this.shutdown});
+  DesktopShell({required this.directory, required this.hideOnClose, required this.shutdown, DesktopStartup? startup}) : _startup = startup ?? DesktopStartup();
+  final DesktopStartup _startup;
   final Directory directory;
   final bool Function() hideOnClose;
   final Future<void> Function() shutdown;
@@ -18,12 +19,13 @@ class DesktopShell with TrayListener, WindowListener {
   bool startupEnabled = false;
   bool _quitting = false;
 
-  Future<void> start() async {
+  Future<void> start({bool launchedAtStartup = false, bool startMinimized = true, String language = 'system'}) async {
     if (!Platform.isWindows && !Platform.isLinux) return;
     await windowManager.ensureInitialized();
     windowManager.addListener(this);
-    launchAtStartup.setup(appName: 'LinkInDrop', appPath: Platform.resolvedExecutable);
-    startupEnabled = await launchAtStartup.isEnabled();
+    Object? startupError;
+    try { startupEnabled = await _startup.initialize(); }
+    catch (error) { startupError = error; }
     try {
       final extension = Platform.isWindows ? 'ico' : 'png';
       final bytes = await rootBundle.load('assets/icons/tray.$extension');
@@ -37,10 +39,17 @@ class DesktopShell with TrayListener, WindowListener {
       await windowManager.setTitle('LinkInDrop');
       trayAvailable = true;
       await windowManager.setPreventClose(true);
+      await refreshLabels(language);
     } catch (_) {
       trayAvailable = false;
       await windowManager.setPreventClose(false);
     }
+    if (launchedAtStartup && startMinimized && trayAvailable) {
+      await windowManager.hide();
+    } else {
+      await show();
+    }
+    if (startupError != null) throw startupError;
   }
 
   Future<void> refreshLabels(String language) async {
@@ -54,8 +63,7 @@ class DesktopShell with TrayListener, WindowListener {
   }
 
   Future<void> setStartup(bool enabled) async {
-    if (enabled) await launchAtStartup.enable(); else await launchAtStartup.disable();
-    startupEnabled = await launchAtStartup.isEnabled();
+    startupEnabled = await _startup.setEnabled(enabled);
   }
 
   Future<void> show() async { await windowManager.show(); await windowManager.focus(); }

@@ -419,4 +419,7 @@ const englishStrings = <String, String>{
   "работает": "running",
   "разрешены": "allowed",
   "Фото сохраняются в папке получения с исходными именами и подпапками: DCIM/Camera/photo.jpg. Оригиналы остаются на устройстве; уже скопированные файлы по тому же пути повторно не отправляются.": "Photos keep their original names and folders inside the receive folder: DCIM/Camera/photo.jpg. Originals stay on the source device; files already backed up at the same path are not sent again.",
+  "Запускать свёрнутым": "Start minimized",
+  "При запуске системы приложение остаётся в трее": "Keep the app in the system tray at startup",
+  "Не удалось изменить автозапуск": "Could not change the startup setting",
 };

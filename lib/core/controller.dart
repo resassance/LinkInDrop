@@ -26,10 +26,11 @@ import 'media_library.dart';
 import 'file_preview.dart';
 
 class BridgeController extends ChangeNotifier {
-  BridgeController({ClipboardAdapter? clipboard}) : clipboard = clipboard ?? ClipboardAdapter() {
+  BridgeController({ClipboardAdapter? clipboard, this.launchedAtStartup = false}) : clipboard = clipboard ?? ClipboardAdapter() {
     selection.addListener(notifyListeners);
   }
   final ClipboardAdapter clipboard;
+  final bool launchedAtStartup;
   final selection = SendSelection();
   final Map<String, String> gallerySources = {};
   String themePreference = 'system';
@@ -42,6 +43,7 @@ class BridgeController extends ChangeNotifier {
   PhotoBackup? backup;
   DesktopShell? desktop;
   bool closeToTray = true;
+  bool startMinimized = true;
   String? relayAddress;
   String? receiveDestination;
   String conflictPolicy = "rename";
@@ -116,6 +118,7 @@ class BridgeController extends ChangeNotifier {
         receiveFiles = data['receiveFiles'] as bool? ?? true;
         shareFiles = data['shareFiles'] as bool? ?? false;
         closeToTray = data['closeToTray'] as bool? ?? true;
+        startMinimized = data['startMinimized'] as bool? ?? true;
         relayAddress = data['relay'] as String?;
         receiveDestination = data['receiveDestination'] as String?;
         conflictPolicy = data['conflictPolicy'] as String? ?? 'rename';
@@ -164,7 +167,7 @@ class BridgeController extends ChangeNotifier {
       queue!.start();
       if (Platform.isWindows || Platform.isLinux) {
         desktop = DesktopShell(directory: directory!, hideOnClose: () => closeToTray, shutdown: shutdown);
-        try { await desktop!.start(); await desktop!.refreshLabels(languagePreference); } catch (error) { record(Activity(localizeMessage("Фоновый режим недоступен"), '$error', error: true)); }
+        try { await desktop!.start(launchedAtStartup: launchedAtStartup, startMinimized: startMinimized, language: languagePreference); } catch (error) { record(Activity(localizeMessage("Фоновый режим недоступен"), '$error', error: true)); }
       }
       final delivered = node!.received.receipts.values.where((item) => item['skipped'] != true).toList().reversed.take(20);
       final recorded = <String>{};
@@ -210,7 +213,7 @@ class BridgeController extends ChangeNotifier {
       'theme': themePreference, 'language': languagePreference,
       'name': deviceName, 'autoClipboard': autoClipboard,
       'receiveClipboard': receiveClipboard, 'receiveFiles': receiveFiles,
-      'shareFiles': shareFiles, 'closeToTray': closeToTray, 'relay': relayAddress,
+      'shareFiles': shareFiles, 'closeToTray': closeToTray, 'startMinimized': startMinimized, 'relay': relayAddress,
       'receiveDestination': receiveDestination, 'conflictPolicy': conflictPolicy, 'speedLimit': speedLimit,
       'sortReceived': sortReceived, 'androidDirectWifi': androidDirectWifi,
       'androidBackground': androidBackground, 'androidBoot': androidBoot, 'recentPeers': recentPeers,
@@ -718,9 +721,10 @@ class BridgeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setDesktop({bool? hide, bool? startup}) async {
-    if (hide != null) closeToTray = hide;
+  Future<void> setDesktop({bool? hide, bool? startup, bool? minimized}) async {
     if (startup != null) await desktop?.setStartup(startup);
+    if (hide != null) closeToTray = hide;
+    if (minimized != null) startMinimized = minimized;
     await _saveSettings();
     notifyListeners();
   }
