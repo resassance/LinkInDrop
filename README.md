@@ -44,7 +44,7 @@ LinkInDrop connects Android, Windows and Linux devices for file transfers and a 
 | Transfer queue | Pause, resume, retry and prioritize transfers. Show progress, speed and estimated time; resume verified blocks. |
 | Received files | Open the destination quickly and optionally sort loose files into type-based folders. Transferred folder trees stay intact. |
 | Photo backup | Copy photos with their original names and folder tree, including separate copies at different paths. Originals stay on the source device. |
-| Background operation | Use the desktop tray or enable Android's foreground service, battery exemption and optional boot recovery. |
+| Background operation | Start with the system in the desktop tray. On Android, enable the foreground service, battery exemption and optional boot recovery. |
 | Appearance | Compact desktop/mobile navigation, light/dark/system themes and Russian/English/system language preferences. |
 
 ## Install

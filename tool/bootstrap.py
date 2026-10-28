@@ -36,6 +36,43 @@ for platform in ["windows", "linux"]:
     if cmake.exists():
         value = cmake.read_text(encoding="utf-8").replace('set(BINARY_NAME "linkindrop")', 'set(BINARY_NAME "LinkInDrop")')
         cmake.write_text(value, encoding="utf-8")
+windows_runner = root / "windows/runner/flutter_window.cpp"
+if windows_runner.exists():
+    value = windows_runner.read_text(encoding="utf-8")
+    if '"--autostart"' not in value:
+        if 'this->Show();' not in value:
+            raise RuntimeError("Windows runner startup callback was not found")
+        value = value.replace('#include "flutter_window.h"', '#include "flutter_window.h"\n#include "utils.h"\n#include <algorithm>')
+        value = value.replace('this->Show();', '\n'.join([
+            'const auto arguments = GetCommandLineArguments();',
+            'if (std::find(arguments.begin(), arguments.end(), "--autostart") == arguments.end()) {',
+            '  this->Show();',
+            '}',
+        ]))
+        windows_runner.write_text(value, encoding="utf-8")
+linux_runner = root / "linux/runner/my_application.cc"
+if linux_runner.exists():
+    value = linux_runner.read_text(encoding="utf-8")
+    if '"--autostart"' not in value:
+        statement = 'gtk_widget_show(GTK_WIDGET(window));'
+        if statement not in value:
+            raise RuntimeError("Linux runner startup window was not found")
+        registration = 'fl_register_plugins(FL_PLUGIN_REGISTRY(view));'
+        if registration not in value:
+            raise RuntimeError("Linux runner plugin registration was not found")
+        value = value.replace(statement, '\n'.join([
+            'bool start_hidden = false;',
+            'for (gchar** argument = self->dart_entrypoint_arguments; argument != nullptr && *argument != nullptr; ++argument) {',
+            '  if (g_strcmp0(*argument, "--autostart") == 0) start_hidden = true;',
+            '}',
+            'if (start_hidden) {',
+            '  gtk_widget_realize(GTK_WIDGET(window));',
+            '} else {',
+            '  gtk_widget_show(GTK_WIDGET(window));',
+            '}',
+        ]))
+        value = value.replace(registration, registration + '\n  if (start_hidden) gtk_widget_realize(GTK_WIDGET(view));')
+        linux_runner.write_text(value, encoding="utf-8")
 gradle = root / "android" / "app" / "build.gradle.kts"
 if gradle.exists():
     value = gradle.read_text(encoding="utf-8")
